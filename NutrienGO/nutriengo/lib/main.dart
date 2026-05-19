@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'onboarding.dart';
 import 'login.dart';
 import 'signup.dart';
+import 'assesment.dart';
 
 void main() {
   runApp(const MyApp());
@@ -26,6 +27,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const OnboardingScreen(),
         '/login': (context) => const LoginScreen(),
         '/signup': (context) => const RegisterScreen(),
+        '/assessment': (context) => const AssessmentScreen(),
         // Nanti tinggal tambah '/register': (context) => const RegisterScreen(),
       },
     );

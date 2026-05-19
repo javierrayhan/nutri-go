@@ -18,6 +18,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isConfirmHidden = true;
 
   @override
+  void dispose() {
+    // Pro-tip: ALWAYS dispose your controllers to prevent memory leaks!
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF8B9B82), // Sage Green Header
@@ -97,7 +107,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          // Logic Daftar
+                          // --- VALIDATION GATEKEEPER ---
+                          final name = _nameController.text.trim();
+                          final email = _emailController.text.trim();
+                          final pass = _passwordController.text;
+                          final confirm = _confirmPasswordController.text;
+
+                          // Check 1: Are any fields empty?
+                          if (name.isEmpty ||
+                              email.isEmpty ||
+                              pass.isEmpty ||
+                              confirm.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Hold up! Tolong isi semua data dulu ya bestie.',
+                                ),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return; // Stop the execution right here
+                          }
+
+                          // Check 2: Do the passwords match?
+                          if (pass != confirm) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Oops, password dan konfirmasi nggak match!',
+                                ),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return; // Stop the execution right here
+                          }
+
+                          // --- SUCCESS PIPELINE ---
+                          // Using Named Routes controlled via main.dart
+                          // Make sure you define '/assessment' in your routes map!
+                          Navigator.pushReplacementNamed(
+                            context,
+                            '/assessment',
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8B9B82),

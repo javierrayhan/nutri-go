@@ -132,7 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Center(
                       child: GestureDetector(
                         onTap: () {
-                          Navigator.pop(context);
+                          Navigator.pushNamed(context, '/signup');
                         },
                         child: RichText(
                           text: const TextSpan(
