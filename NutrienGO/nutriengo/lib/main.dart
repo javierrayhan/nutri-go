@@ -3,6 +3,8 @@ import 'onboarding.dart';
 import 'login.dart';
 import 'signup.dart';
 import 'assesment.dart';
+import 'home.dart';
+import 'tracking.dart';
 
 void main() {
   runApp(const MyApp());
@@ -28,6 +30,8 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginScreen(),
         '/signup': (context) => const RegisterScreen(),
         '/assessment': (context) => const AssessmentScreen(),
+        '/home': (context) => const HomeScreen(),
+        '/track': (context) => const TrackingScreen(),
         // Nanti tinggal tambah '/register': (context) => const RegisterScreen(),
       },
     );

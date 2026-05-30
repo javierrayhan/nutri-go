@@ -268,8 +268,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                           ),
                         ),
                         onPressed: () {
-                          // TODO: Validate data & Push to next pipeline stage
-                          // Navigator.pushNamed(context, '/next_screen');
+                          Navigator.pushNamed(context, '/home');
                         },
                         child: const Text(
                           'SIMPAN DAN LANJUTKAN!',
