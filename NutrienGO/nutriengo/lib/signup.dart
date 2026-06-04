@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -16,6 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isPasswordHidden = true;
   bool _isConfirmHidden = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -106,50 +108,84 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton(
-                        onPressed: () {
-                          // --- VALIDATION GATEKEEPER ---
-                          final name = _nameController.text.trim();
-                          final email = _emailController.text.trim();
-                          final pass = _passwordController.text;
-                          final confirm = _confirmPasswordController.text;
+                        onPressed: _isLoading
+                            ? null
+                            : () async {
+                                // --- VALIDATION GATEKEEPER ---
+                                final name = _nameController.text.trim();
+                                final email = _emailController.text.trim();
+                                final pass = _passwordController.text;
+                                final confirm = _confirmPasswordController.text;
 
-                          // Check 1: Are any fields empty?
-                          if (name.isEmpty ||
-                              email.isEmpty ||
-                              pass.isEmpty ||
-                              confirm.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Hold up! Tolong isi semua data dulu ya bestie.',
-                                ),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
-                            return; // Stop the execution right here
-                          }
+                                if (name.isEmpty ||
+                                    email.isEmpty ||
+                                    pass.isEmpty ||
+                                    confirm.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Hold up! Tolong isi semua data dulu ya bestie.',
+                                      ),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                          // Check 2: Do the passwords match?
-                          if (pass != confirm) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Oops, password dan konfirmasi nggak match!',
-                                ),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
-                            return; // Stop the execution right here
-                          }
+                                if (pass != confirm) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Oops, password dan konfirmasi nggak match!',
+                                      ),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                          // --- SUCCESS PIPELINE ---
-                          // Using Named Routes controlled via main.dart
-                          // Make sure you define '/assessment' in your routes map!
-                          Navigator.pushReplacementNamed(
-                            context,
-                            '/assessment',
-                          );
-                        },
+                                // --- SUCCESS PIPELINE (TEMBAK API) ---
+                                setState(() {
+                                  _isLoading = true;
+                                });
+
+                                AuthService authService = AuthService();
+                                // Catatan: API Damar saat ini di Swagger hanya minta email & password.
+                                // Jika nanti Damar minta 'name' juga, tambahkan parameter name di AuthService-mu.
+                                bool isSuccess = await authService.register(
+                                  email,
+                                  pass,
+                                );
+
+                                setState(() {
+                                  _isLoading = false;
+                                });
+
+                                if (isSuccess) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Pendaftaran Berhasil! Silakan Login.',
+                                      ),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                  // Kembali ke halaman Login
+                                  Navigator.pushReplacementNamed(
+                                    context,
+                                    '/login',
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Gagal Mendaftar. Email mungkin sudah terpakai.',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8B9B82),
                           foregroundColor: Colors.white,
@@ -158,13 +194,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
-                          'DAFTAR SEKARANG!',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.1,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Text(
+                                'DAFTAR SEKARANG!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
                       ),
                     ),
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,6 +14,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // State buat ngatur visibility password
   bool _isPasswordHidden = true;
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +111,67 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: () {},
+                        // Jika _isLoading true, matikan tombol (null). Jika false, jalankan fungsi async
+                        onPressed: _isLoading
+                            ? null
+                            : () async {
+                                String email = _emailController.text.trim();
+                                String password = _passwordController.text;
+
+                                // Validasi sederhana: Jangan tembak API kalau form kosong
+                                if (email.isEmpty || password.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Email dan Password tidak boleh kosong!',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // Nyalakan animasi loading
+                                setState(() {
+                                  _isLoading = true;
+                                });
+
+                                // Panggil jembatan API
+                                AuthService authService = AuthService();
+                                bool isSuccess = await authService.login(
+                                  email,
+                                  password,
+                                );
+
+                                // Matikan animasi loading
+                                setState(() {
+                                  _isLoading = false;
+                                });
+
+                                // Evaluasi hasil dari server
+                                if (isSuccess) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Login Berhasil!'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                  // Arahkan ke halaman selanjutnya
+                                  // Pastikan rute ini (misal '/home') sudah didaftarkan Jev di main.dart
+                                  Navigator.pushReplacementNamed(
+                                    context,
+                                    '/home',
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Login Gagal. Cek email dan password Anda.',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8B9B82),
                           foregroundColor: Colors.white,
@@ -118,13 +180,23 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
-                          'MASUK',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
+                        // Ubah teks menjadi ikon muter-muter kalau lagi loading
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Text(
+                                'MASUK',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
                       ),
                     ),
 
