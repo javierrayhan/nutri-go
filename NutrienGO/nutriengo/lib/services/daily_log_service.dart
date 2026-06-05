@@ -61,4 +61,32 @@ class DailyLogService {
       return [];
     }
   }
+
+  Future<bool> deleteDailyLog(int id) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      // Tembak API DELETE sesuai Swagger Damar
+      final response = await http.delete(
+        Uri.parse('$baseUrl/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print(
+          'Gagal hapus log: HTTP ${response.statusCode} - ${response.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      print('Error exception saat hapus log: $e');
+      return false;
+    }
+  }
 }

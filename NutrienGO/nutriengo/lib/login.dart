@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -155,12 +156,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                       backgroundColor: Colors.green,
                                     ),
                                   );
-                                  // Arahkan ke halaman selanjutnya
-                                  // Pastikan rute ini (misal '/home') sudah didaftarkan Jev di main.dart
-                                  Navigator.pushReplacementNamed(
-                                    context,
-                                    '/home',
-                                  );
+
+                                  // --- LOGIKA PERCABANGAN ADMIN VS USER ---
+                                  // 1. Bongkar brankas untuk melihat Role
+                                  SharedPreferences prefs =
+                                      await SharedPreferences.getInstance();
+                                  String? role = prefs.getString('user_role');
+
+                                  // 2. Arahkan sesuai kastanya
+                                  if (role == 'ADMIN') {
+                                    Navigator.pushReplacementNamed(
+                                      context,
+                                      '/admin',
+                                    );
+                                  } else {
+                                    Navigator.pushReplacementNamed(
+                                      context,
+                                      '/home',
+                                    );
+                                  }
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(

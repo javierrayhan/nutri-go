@@ -40,33 +40,34 @@ class AuthService {
     }
   }
 
-  // FUNGSI 2: LOGIN
   // --- FUNGSI LOGIN DI auth_service.dart ---
   Future<bool> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse(
-          '$baseUrl/login',
-        ), // Pastikan baseUrl ini mengarah ke /api/auth
+        Uri.parse('$baseUrl/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
 
-      // Status 200 OK dari Damar
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
 
-        // PENTING: Tangkap Token JWT dari dalam map 'data'
         if (jsonResponse['data'] != null &&
             jsonResponse['data']['token'] != null) {
           String token = jsonResponse['data']['token'];
 
-          // Simpan token ke brankas HP
+          // PENTING: Tangkap juga ROLE dari user yang sedang login
+          String role =
+              jsonResponse['data']['user']['role'] ??
+              'USER'; // Default ke USER jika null
+
+          // Simpan token DAN role ke brankas HP
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString('jwt_token', token);
+          await prefs.setString('user_role', role); // <-- Ini kuncinya!
 
-          print('Login Berhasil, Token disimpan!');
-          return true; // <-- Ini yang akan membuat UI memunculkan warna hijau dan pindah halaman
+          print('Login Berhasil, Token & Role ($role) disimpan!');
+          return true;
         }
 
         print('Token tidak ditemukan di JSON response');
@@ -78,6 +79,29 @@ class AuthService {
     } catch (e) {
       print('Error Exception Login: $e');
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getUserMe() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        return jsonResponse['data'];
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 }

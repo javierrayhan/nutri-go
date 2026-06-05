@@ -49,14 +49,12 @@ class _TrackingScreenState extends State<TrackingScreen> {
     },
   ];
 
-  // KITA KEMBALIKAN KAMUS _allFoods UNTUK CLIENT-SIDE
   List<dynamic> _allFoods = [];
   List<dynamic> _filteredFoods = [];
 
   bool _isLoadingFoods = false;
   bool _isLoadingLogs = true;
 
-  // Variabel untuk Total Harian
   double _dailyTotalCals = 0;
   double _dailyTotalPro = 0;
   double _dailyTotalCarbs = 0;
@@ -74,7 +72,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  // --- FUNGSI LOAD LOG HARIAN DARI DAMAR ---
   Future<void> _loadTodayLogs() async {
     setState(() => _isLoadingLogs = true);
 
@@ -128,8 +125,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
     for (var log in logs) {
       String time = log['mealTime'] ?? 'SNACK';
-
-      // Langsung baca nama dari API Damar (Join Table)
       log['foodName'] = (log['food'] != null && log['food']['name'] != null)
           ? log['food']['name']
           : 'Makanan Tdk Diketahui';
@@ -163,7 +158,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     });
   }
 
-  // --- FUNGSI TARIK DATA MAKANAN (SEKALI SAJA) ---
   Future<void> _fetchFoods() async {
     FoodService foodService = FoodService();
     List<dynamic> foods = await foodService.getFoods();
@@ -175,7 +169,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     });
   }
 
-  // --- FUNGSI FILTER CLIENT-SIDE (LIMIT 10) ---
   void _runClientFilter(String enteredKeyword, StateSetter setModalState) {
     List<dynamic> results = [];
     if (enteredKeyword.isEmpty) {
@@ -187,12 +180,30 @@ class _TrackingScreenState extends State<TrackingScreen> {
               enteredKeyword.toLowerCase(),
             ),
           )
-          .take(10) // Limit biar tidak ngelag
+          .take(10)
           .toList();
     }
     setModalState(() {
       _filteredFoods = results;
     });
+  }
+
+  // --- OPTIMISTIC UI: PANGGIL API DIAM-DIAM DI BACKGROUND ---
+  Future<void> _deleteLogItemBackground(int id, String foodName) async {
+    DailyLogService logService = DailyLogService();
+    bool success = await logService.deleteDailyLog(id);
+
+    // Kita HANYA memunculkan notifikasi kalau GAGAL menghapus.
+    // Kalau sukses, diam saja karena UI sudah bersih.
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Koneksi terputus. Gagal menghapus $foodName'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      _loadTodayLogs(); // Tarik ulang data asli dari server Damar untuk memperbaiki UI
+    }
   }
 
   @override
@@ -426,38 +437,90 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       const Divider(color: Color(0xFFEEEEEE), thickness: 1),
                       const SizedBox(height: 8),
                       ...items.map((item) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item['foodName'] ?? 'Unknown',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                        return Dismissible(
+                          key: ValueKey(item['id'].toString()),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20.0),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.delete_sweep_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          // OPTIMISTIC UI: LANGSUNG HAPUS SAAT DIGESER
+                          onDismissed: (direction) {
+                            double itemCals = _safeDouble(
+                              item['totalCalories'],
+                            );
+                            double itemPro = _safeDouble(item['totalProtein']);
+                            double itemCarbs = _safeDouble(item['totalCarbs']);
+                            double itemFat = _safeDouble(item['totalFat']);
+
+                            setState(() {
+                              // 1. Cabut item dari UI seketika
+                              items.remove(item);
+
+                              // 2. Kurangi makro di kategori makan ini
+                              meal['cals'] -= itemCals;
+                              meal['protein'] -= itemPro;
+                              meal['carbs'] -= itemCarbs;
+                              meal['fat'] -= itemFat;
+
+                              // 3. Kurangi makro di Rekap Harian Atas
+                              _dailyTotalCals -= itemCals;
+                              _dailyTotalPro -= itemPro;
+                              _dailyTotalCarbs -= itemCarbs;
+                              _dailyTotalFat -= itemFat;
+                            });
+
+                            // 4. Suruh satpam API kerja di background tanpa ketahuan
+                            _deleteLogItemBackground(
+                              item['id'],
+                              item['foodName'],
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8.0,
+                              horizontal: 4.0,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['foodName'] ?? 'Unknown',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '${item['consumtionGram']} gram',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
+                                    Text(
+                                      '${item['consumtionGram']} gram',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                '${_safeDouble(item['totalCalories']).toInt()} kcal',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF90A58D),
+                                  ],
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  '${_safeDouble(item['totalCalories']).toInt()} kcal',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF90A58D),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       }).toList(),
@@ -466,7 +529,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
                     TextButton.icon(
                       onPressed: () async {
-                        // Tarik data 1x aja kalau memori kosong
                         if (_allFoods.isEmpty) {
                           showDialog(
                             context: context,
@@ -481,7 +543,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           Navigator.pop(context);
                         }
 
-                        // Langsung potong 10 saat pertama buka popup
                         setState(() {
                           _filteredFoods = _allFoods.take(10).toList();
                         });
@@ -612,7 +673,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       Padding(
                         padding: const EdgeInsets.all(20),
                         child: TextField(
-                          // Panggil fungsi pencarian Client-Side
                           onChanged: (value) =>
                               _runClientFilter(value, setModalState),
                           decoration: InputDecoration(
@@ -805,7 +865,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
       }
     }
 
-    // Jangan lupa bersihkan list original biar gak kecentang terus
     setState(() {
       for (var f in _allFoods) f['checked'] = false;
     });
@@ -974,7 +1033,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
           _buildNavItem(Icons.home_rounded, 'Home', false, '/home'),
           _buildNavItem(Icons.note_alt_rounded, 'Tracking', true, '/track'),
           _buildNavItem(Icons.bar_chart_rounded, 'Laporan', false, '/laporan'),
-          _buildNavItem(Icons.info_rounded, 'About', false, '/about'),
+          _buildNavItem(Icons.person_rounded, 'Profil', false, '/profile'),
         ],
       ),
     );
