@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+// Import http, convert, dan shared_prefs dihapus biar clean
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -506,10 +504,9 @@ class HeaderClipper extends CustomClipper<Path> {
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 
-// --- SERVICE ---
+// --- SERVICE (DUMMY VERSION) ---
 class ProfileService {
-  final String baseUrl = 'https://api-nutrigo.vercel.app/api/profile';
-
+  // Fungsi Dummy untuk simulasi post data
   Future<bool> createProfile({
     required int age,
     required double height,
@@ -519,65 +516,25 @@ class ProfileService {
     required String activityLevel,
     required String goal,
   }) async {
-    try {
-      // Ambil Token JWT dari brankas HP
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? token = prefs.getString('jwt_token');
-
-      final response = await http.post(
-        Uri.parse(baseUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token', // Pamerkan Gelang VIP ke Damar
-        },
-        body: jsonEncode({
-          'age': age,
-          'height': height,
-          'weight': weight,
-          'weightGoal': weightGoal,
-          'gender': gender,
-          'activityLevel': activityLevel,
-          'goal': goal,
-        }),
-      );
-
-      // Status 201 Created
-      if (response.statusCode == 201) {
-        return true;
-      } else {
-        print('Gagal Simpan Profil: ${response.body}');
-        return false;
-      }
-    } catch (e) {
-      print('Error Profile: $e');
-      return false;
-    }
+    // Simulasi nunggu loading server 1 detik
+    await Future.delayed(const Duration(seconds: 1));
+    return true;
   }
 
+  // Fungsi Dummy untuk simulasi get data
   Future<Map<String, dynamic>?> getProfile() async {
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? token = prefs.getString('jwt_token');
+    // Simulasi narik data dari server 1.5 detik
+    await Future.delayed(const Duration(milliseconds: 1500));
 
-      final response = await http.get(
-        Uri.parse(baseUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        // Mengambil isi dari dalam "data" sesuai struktur Swagger Damar
-        return jsonResponse['data'];
-      } else {
-        print('Gagal Get Profil: ${response.body}');
-        return null;
-      }
-    } catch (e) {
-      print('Error Get Profil: $e');
-      return null;
-    }
+    // Balikin Dummy Data persis kaya struktur Swagger
+    return {
+      'age': 24,
+      'height': 170.0,
+      'weight': 67.0,
+      'weightGoal': 69.0,
+      'gender': 'Laki-Laki',
+      'activityLevel': 'Cukup Aktif',
+      'goal': 'Bulking',
+    };
   }
 }
