@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/profile_service.dart';
 
 class AssessmentScreen extends StatefulWidget {
   const AssessmentScreen({super.key});
@@ -26,6 +27,8 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
   String _selectedGender = 'Laki-Laki';
   double _activityLevel = 0.0; // 0.0 = Jarang, 0.5 = Cukup Aktif, 1.0 = Aktif
   String _selectedTarget = 'Bulking';
+
+  bool _isLoading = false;
 
   // Core thematic colors extracted from the design
   final Color primaryGreen = const Color(0xFF8B9B82);
@@ -236,48 +239,133 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                       height: 56,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC7CEC3),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                        ),
-                        onPressed: () => Navigator.pop(context, '/login'),
-                        child: const Text(
-                          'KEMBALI',
-                          style: TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 2,
-                    child: SizedBox(
-                      height: 56,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
                           backgroundColor: primaryGreen,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(28),
                           ),
                         ),
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/home');
-                        },
-                        child: const Text(
-                          'SIMPAN DAN LANJUTKAN!',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
+                        onPressed: _isLoading
+                            ? null
+                            : () async {
+                                // 1. Ambil & Validasi Angka
+                                final int umur =
+                                    int.tryParse(_ageController.text) ?? 0;
+                                final double tinggi =
+                                    double.tryParse(_heightController.text) ??
+                                    0;
+                                final double berat =
+                                    double.tryParse(_weightController.text) ??
+                                    0;
+                                final double targetBerat =
+                                    double.tryParse(
+                                      _targetWeightController.text,
+                                    ) ??
+                                    0;
+
+                                if (umur == 0 ||
+                                    tinggi == 0 ||
+                                    berat == 0 ||
+                                    targetBerat == 0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Pastikan Umur, Tinggi, Berat, dan Target diisi!',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // 2. Penerjemah (Mapper) UI ke Backend Damar
+                                String apiGender =
+                                    _selectedGender == 'Laki-Laki'
+                                    ? 'MALE'
+                                    : 'FEMALE';
+
+                                String apiActivity;
+                                if (_activityLevel == 0.0) {
+                                  apiActivity = 'SEDENTARY';
+                                } else if (_activityLevel == 0.5) {
+                                  apiActivity = 'MODERATE';
+                                } else {
+                                  apiActivity = 'VERY_ACTIVE';
+                                }
+
+                                String apiGoal;
+                                if (_selectedTarget == 'Bulking') {
+                                  apiGoal = 'BULKING';
+                                } else if (_selectedTarget == 'Cutting') {
+                                  apiGoal = 'CUTTING';
+                                } else {
+                                  apiGoal = 'MAINTAINING';
+                                }
+
+                                // 3. Tembak API
+                                setState(() {
+                                  _isLoading = true;
+                                });
+
+                                ProfileService profileService =
+                                    ProfileService();
+                                bool isSuccess = await profileService
+                                    .createProfile(
+                                      age: umur,
+                                      height: tinggi,
+                                      weight: berat,
+                                      weightGoal: targetBerat,
+                                      gender: apiGender,
+                                      activityLevel: apiActivity,
+                                      goal: apiGoal,
+                                    );
+
+                                setState(() {
+                                  _isLoading = false;
+                                });
+
+                                // 4. Evaluasi
+                                if (isSuccess) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Profil berhasil disimpan!',
+                                      ),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                  // Lanjut ke Dashboard/Home
+                                  Navigator.pushReplacementNamed(
+                                    context,
+                                    '/home',
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Gagal menyimpan profil. Coba lagi.',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Text(
+                                'SIMPAN DAN LANJUTKAN!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
                       ),
                     ),
                   ),
