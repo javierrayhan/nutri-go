@@ -219,9 +219,6 @@ class ProfileScreen extends StatelessWidget {
                             children: [
                               _buildMenuTile(
                                 context,
-                                icon: Icons.person_outline_rounded,
-                                iconColor: sageGreen,
-                                iconBgColor: sageGreen.withOpacity(0.1),
                                 title: 'Edit Data Diri',
                                 onTap: () => _showToast(
                                   context,
@@ -231,13 +228,11 @@ class ProfileScreen extends StatelessWidget {
                               const Divider(
                                 height: 1,
                                 color: Color(0xFFF1F5F9),
-                                indent: 60,
+                                indent: 16,
+                                endIndent: 16,
                               ),
                               _buildMenuTile(
                                 context,
-                                icon: Icons.track_changes_rounded,
-                                iconColor: Colors.blue,
-                                iconBgColor: Colors.blue.withOpacity(0.1),
                                 title: 'Ubah Target Nutrisi',
                                 onTap: () => _showToast(
                                   context,
@@ -272,9 +267,6 @@ class ProfileScreen extends StatelessWidget {
                           ),
                           child: _buildMenuTile(
                             context,
-                            icon: Icons.logout_rounded,
-                            iconColor: Colors.redAccent,
-                            iconBgColor: Colors.redAccent.withOpacity(0.1),
                             title: 'Keluar (Log Out)',
                             textColor: Colors.redAccent,
                             onTap: () =>
@@ -338,9 +330,6 @@ class ProfileScreen extends StatelessWidget {
 
   Widget _buildMenuTile(
     BuildContext context, {
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBgColor,
     required String title,
     Color textColor = const Color(0xFF2D3748),
     required VoidCallback onTap,
@@ -349,19 +338,9 @@ class ProfileScreen extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: iconBgColor,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor),
-            ),
-            const SizedBox(width: 16),
             Expanded(
               child: Text(
                 title,
