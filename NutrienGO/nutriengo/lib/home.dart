@@ -338,10 +338,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildNavItem(
             context,
             Icons.note_alt_rounded,
-            'Catatan',
+            'Tracking',
             false,
             '/track',
-          ),
+          ), // Disamakan jadi Tracking
           _buildNavItem(
             context,
             Icons.bar_chart_rounded,
@@ -349,7 +349,13 @@ class _HomeScreenState extends State<HomeScreen> {
             false,
             '/laporan',
           ),
-          _buildNavItem(context, Icons.info_rounded, 'About', false, '/about'),
+          _buildNavItem(
+            context,
+            Icons.person_rounded,
+            'Profil',
+            false,
+            '/profile',
+          ), // Diganti jadi Profil
         ],
       ),
     );
@@ -369,20 +375,24 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.pushReplacementNamed(context, route);
         }
       },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 32),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
+      child: Container(
+        color: Colors.transparent, // Memperlebar area klik agar lebih responsif
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 30),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
