@@ -6,6 +6,7 @@ import 'assesment.dart';
 import 'home.dart';
 import 'tracking.dart';
 import 'profile.dart';
+import 'dailylogs.dart';
 
 void main() {
   runApp(const MyApp());
@@ -34,6 +35,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/track': (context) => const TrackingScreen(),
         '/profile': (context) => const ProfileScreen(),
+        '/laporan': (context) => const LaporanScreen(),
         // Nanti tinggal tambah '/register': (context) => const RegisterScreen(),
       },
     );
