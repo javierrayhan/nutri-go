@@ -1,7 +1,33 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic>? _profileData;
+  final ProfileService _profileService = ProfileService();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfileData();
+  }
+
+  Future<void> _fetchProfileData() async {
+    final data = await _profileService.getProfile();
+    setState(() {
+      _profileData = data;
+      _isLoading = false;
+    });
+  }
 
   // Helper method for native-feeling toasts
   void _showToast(BuildContext context, String message) {
@@ -117,9 +143,13 @@ class ProfileScreen extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  const Text(
-                                    'user@nutriengo.com',
-                                    style: TextStyle(
+                                  Text(
+                                    _isLoading
+                                        ? 'Memuat data...'
+                                        : (_profileData != null
+                                              ? '${_profileData!['gender']} • ${_profileData!['goal']}'
+                                              : 'user@nutriengo.com'),
+                                    style: const TextStyle(
                                       fontSize: 14,
                                       color: textLight,
                                       fontWeight: FontWeight.w500,
@@ -134,29 +164,40 @@ class ProfileScreen extends StatelessWidget {
                                   const SizedBox(height: 20),
 
                                   // Mini Stats
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceEvenly,
-                                    children: [
-                                      _buildMiniStat(
-                                        'BERAT AWAL',
-                                        '67',
-                                        textLight,
-                                        textDark,
-                                      ),
-                                      Container(
-                                        width: 1.5,
-                                        height: 40,
-                                        color: const Color(0xFFF1F5F9),
-                                      ),
-                                      _buildMiniStat(
-                                        'TARGET',
-                                        '69',
-                                        textLight,
-                                        textDark,
-                                      ),
-                                    ],
-                                  ),
+                                  _isLoading
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(20.0),
+                                          child: CircularProgressIndicator(
+                                            color: sageGreen,
+                                          ),
+                                        )
+                                      : Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceEvenly,
+                                          children: [
+                                            _buildMiniStat(
+                                              'BERAT AWAL',
+                                              _profileData?['weight']
+                                                      ?.toString() ??
+                                                  '-',
+                                              textLight,
+                                              textDark,
+                                            ),
+                                            Container(
+                                              width: 1.5,
+                                              height: 40,
+                                              color: const Color(0xFFF1F5F9),
+                                            ),
+                                            _buildMiniStat(
+                                              'TARGET',
+                                              _profileData?['weightGoal']
+                                                      ?.toString() ??
+                                                  '-',
+                                              textLight,
+                                              textDark,
+                                            ),
+                                          ],
+                                        ),
                                 ],
                               ),
                             ),
@@ -463,4 +504,80 @@ class HeaderClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
+}
+
+// --- SERVICE ---
+class ProfileService {
+  final String baseUrl = 'https://api-nutrigo.vercel.app/api/profile';
+
+  Future<bool> createProfile({
+    required int age,
+    required double height,
+    required double weight,
+    required double weightGoal,
+    required String gender,
+    required String activityLevel,
+    required String goal,
+  }) async {
+    try {
+      // Ambil Token JWT dari brankas HP
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // Pamerkan Gelang VIP ke Damar
+        },
+        body: jsonEncode({
+          'age': age,
+          'height': height,
+          'weight': weight,
+          'weightGoal': weightGoal,
+          'gender': gender,
+          'activityLevel': activityLevel,
+          'goal': goal,
+        }),
+      );
+
+      // Status 201 Created
+      if (response.statusCode == 201) {
+        return true;
+      } else {
+        print('Gagal Simpan Profil: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error Profile: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getProfile() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      final response = await http.get(
+        Uri.parse(baseUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        // Mengambil isi dari dalam "data" sesuai struktur Swagger Damar
+        return jsonResponse['data'];
+      } else {
+        print('Gagal Get Profil: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error Get Profil: $e');
+      return null;
+    }
+  }
 }
