@@ -282,7 +282,13 @@ class HomeScreen extends StatelessWidget {
             false,
             '/laporan',
           ),
-          _buildNavItem(context, Icons.info_rounded, 'About', false, '/about'),
+          _buildNavItem(
+            context,
+            Icons.person_rounded,
+            'Profile',
+            false,
+            '/profile',
+          ),
         ],
       ),
     );

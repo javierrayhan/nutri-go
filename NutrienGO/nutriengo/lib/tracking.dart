@@ -449,7 +449,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
           _buildNavItem(Icons.home_rounded, 'Home', false, '/home'),
           _buildNavItem(Icons.note_alt_rounded, 'Tracking', true, '/Tracking'),
           _buildNavItem(Icons.bar_chart_rounded, 'Laporan', false, '/laporan'),
-          _buildNavItem(Icons.info_rounded, 'About', false, '/about'),
+          _buildNavItem(Icons.person_rounded, 'Profile', false, '/profile'),
         ],
       ),
     );
