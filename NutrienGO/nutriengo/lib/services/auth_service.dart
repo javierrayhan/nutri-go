@@ -7,12 +7,16 @@ class AuthService {
   final String baseUrl = 'https://api-nutrigo.vercel.app/api/auth';
 
   // FUNGSI 1: REGISTER
-  Future<bool> register(String email, String password) async {
+  Future<bool> register(String fullName, String email, String password) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/register'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({
+          'fullName': fullName,
+          'email': email,
+          'password': password,
+        }),
       );
 
       // Status 201 artinya Created (Berhasil sesuai docs Swagger Damar)
@@ -40,12 +44,13 @@ class AuthService {
       // Status 200 artinya Sukses
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        final token = data['data']['token'];
 
         // Asumsi API Damar membalas dengan field 'token'
         // Kita simpan token ini ke brankas HP (Shared Preferences)
-        if (data['token'] != null) {
+        if (token != null) {
           SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setString('jwt_token', data['token']);
+          await prefs.setString('jwt_token', token);
           return true;
         }
         return false;

@@ -153,6 +153,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 // Catatan: API Damar saat ini di Swagger hanya minta email & password.
                                 // Jika nanti Damar minta 'name' juga, tambahkan parameter name di AuthService-mu.
                                 bool isSuccess = await authService.register(
+                                  name,
                                   email,
                                   pass,
                                 );
