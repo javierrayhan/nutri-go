@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'services/food_service.dart';
 import 'services/daily_log_service.dart';
 
@@ -52,8 +55,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
   List<dynamic> _allFoods = [];
   List<dynamic> _filteredFoods = [];
 
-  bool _isLoadingFoods = false;
   bool _isLoadingLogs = true;
+
+  // --- NEW STATE UNTUK NAMA USER ---
+  bool _isLoadingName = true;
+  String _userName = 'User';
 
   double _dailyTotalCals = 0;
   double _dailyTotalPro = 0;
@@ -63,7 +69,59 @@ class _TrackingScreenState extends State<TrackingScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTodayLogs();
+    _fetchUserName(); // Panggil fungsi tarik nama
+    _loadTodayLogs(); // Panggil fungsi tarik log makanan
+  }
+
+  // --- FUNGSI TARIK NAMA DARI API (DIREFACTOR PAKAI PROFILE SERVICE) ---
+  Future<void> _fetchUserName() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    // Check common local keys first
+    String? localName = prefs.getString('user_name') ?? prefs.getString('name');
+    String? localEmail =
+        prefs.getString('user_email') ?? prefs.getString('email');
+
+    String? resolvedName = localName;
+    if (resolvedName == null && localEmail != null) {
+      resolvedName = localEmail.split('@').first;
+    }
+
+    // If still not found, try calling /api/auth/me using saved JWT
+    if (resolvedName == null) {
+      final token = prefs.getString('jwt_token');
+      if (token != null) {
+        try {
+          final resp = await http.get(
+            Uri.parse('https://api-nutrigo.vercel.app/api/auth/me'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          );
+
+          if (resp.statusCode == 200) {
+            final json = jsonDecode(resp.body);
+            final data = json['data'];
+            if (data != null) {
+              if (data['fullName'] != null)
+                resolvedName = data['fullName'];
+              else if (data['email'] != null)
+                resolvedName = (data['email'] as String).split('@').first;
+            }
+          }
+        } catch (e) {
+          // ignore network errors, we'll fallback to 'User'
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _userName = resolvedName ?? 'User';
+        _isLoadingName = false;
+      });
+    }
   }
 
   double _safeDouble(dynamic value) {
@@ -188,13 +246,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
     });
   }
 
-  // --- OPTIMISTIC UI: PANGGIL API DIAM-DIAM DI BACKGROUND ---
   Future<void> _deleteLogItemBackground(int id, String foodName) async {
     DailyLogService logService = DailyLogService();
     bool success = await logService.deleteDailyLog(id);
 
-    // Kita HANYA memunculkan notifikasi kalau GAGAL menghapus.
-    // Kalau sukses, diam saja karena UI sudah bersih.
     if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -202,7 +257,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
           backgroundColor: Colors.red,
         ),
       );
-      _loadTodayLogs(); // Tarik ulang data asli dari server Damar untuk memperbaiki UI
+      _loadTodayLogs();
     }
   }
 
@@ -220,20 +275,21 @@ class _TrackingScreenState extends State<TrackingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 24.0, top: 20.0),
+                Padding(
+                  padding: const EdgeInsets.only(left: 24.0, top: 20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // --- RENDER NAMA DINAMIS DI SINI ---
                       Text(
-                        'Hi, Rian!',
-                        style: TextStyle(
+                        _isLoadingName ? 'Hi, ...' : 'Hi, $_userName!',
+                        style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      Text(
+                      const Text(
                         'Jurnal Harian',
                         style: TextStyle(
                           fontSize: 16,
@@ -453,7 +509,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                               size: 28,
                             ),
                           ),
-                          // OPTIMISTIC UI: LANGSUNG HAPUS SAAT DIGESER
                           onDismissed: (direction) {
                             double itemCals = _safeDouble(
                               item['totalCalories'],
@@ -463,23 +518,18 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             double itemFat = _safeDouble(item['totalFat']);
 
                             setState(() {
-                              // 1. Cabut item dari UI seketika
                               items.remove(item);
-
-                              // 2. Kurangi makro di kategori makan ini
                               meal['cals'] -= itemCals;
                               meal['protein'] -= itemPro;
                               meal['carbs'] -= itemCarbs;
                               meal['fat'] -= itemFat;
 
-                              // 3. Kurangi makro di Rekap Harian Atas
                               _dailyTotalCals -= itemCals;
                               _dailyTotalPro -= itemPro;
                               _dailyTotalCarbs -= itemCarbs;
                               _dailyTotalFat -= itemFat;
                             });
 
-                            // 4. Suruh satpam API kerja di background tanpa ketahuan
                             _deleteLogItemBackground(
                               item['id'],
                               item['foodName'],
@@ -1050,20 +1100,24 @@ class _TrackingScreenState extends State<TrackingScreen> {
       onTap: () {
         if (!isActive) Navigator.pushReplacementNamed(context, route);
       },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 32),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
+      child: Container(
+        color: Colors.transparent,
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 30),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

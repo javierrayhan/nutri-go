@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'services/profile_service.dart';
 import 'services/daily_log_service.dart'; // Tambahan Import Kurir Log
 
@@ -11,6 +14,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
+
+  // Nama user untuk ditampilkan di header
+  bool _isLoadingName = true;
+  String _userName = 'User';
 
   // Variabel Target Maksimal (Dari Profile)
   int maxCalories = 0;
@@ -27,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchUserName();
     _loadData(); // Panggil fungsi gabungan
   }
 
@@ -89,6 +97,52 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- Ambil nama user: cek SharedPreferences lalu fallback ke /api/auth/me ---
+  Future<void> _fetchUserName() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    String? localName = prefs.getString('user_name') ?? prefs.getString('name');
+    String? localEmail = prefs.getString('user_email') ?? prefs.getString('email');
+
+    String? resolvedName = localName;
+    if (resolvedName == null && localEmail != null) {
+      resolvedName = localEmail.split('@').first;
+    }
+
+    if (resolvedName == null) {
+      final token = prefs.getString('jwt_token');
+      if (token != null) {
+        try {
+          final resp = await http.get(
+            Uri.parse('https://api-nutrigo.vercel.app/api/auth/me'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          );
+
+          if (resp.statusCode == 200) {
+            final json = jsonDecode(resp.body);
+            final data = json['data'];
+            if (data != null) {
+              if (data['fullName'] != null) resolvedName = data['fullName'];
+              else if (data['email'] != null) resolvedName = (data['email'] as String).split('@').first;
+            }
+          }
+        } catch (_) {
+          // ignore and fallback to 'User'
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _userName = resolvedName ?? 'User';
+        _isLoadingName = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,9 +164,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 20),
-                        const Text(
-                          'Hi, Rian!',
-                          style: TextStyle(
+                        Text(
+                          _isLoadingName ? 'Hi, ...' : 'Hi, $_userName!',
+                          style: const TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
