@@ -145,15 +145,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 }
 
                                 // --- SUCCESS PIPELINE (TEMBAK API) ---
+                                // --- SUCCESS PIPELINE (TEMBAK API) ---
                                 setState(() {
                                   _isLoading = true;
                                 });
 
                                 AuthService authService = AuthService();
-                                // Catatan: API Damar saat ini di Swagger hanya minta email & password.
-                                // Jika nanti Damar minta 'name' juga, tambahkan parameter name di AuthService-mu.
+
+                                // PERUBAHAN 1: Masukkan 'name' ke dalam parameter pengiriman
                                 bool isSuccess = await authService.register(
-                                  name,
+                                  name, // <-- Ini yang baru ditambahkan
                                   email,
                                   pass,
                                 );
@@ -166,15 +167,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'Pendaftaran Berhasil! Silakan Login.',
+                                        'Pendaftaran Berhasil! Mari isi profil fisikmu.',
                                       ),
                                       backgroundColor: Colors.green,
                                     ),
                                   );
-                                  // Kembali ke halaman Login
+
+                                  // PERUBAHAN 2: Arahkan langsung ke Assessment, BUKAN ke Login
+                                  // Karena API Damar yang baru sudah otomatis memberikan Token JWT saat Register
                                   Navigator.pushReplacementNamed(
                                     context,
-                                    '/login',
+                                    '/assessment',
                                   );
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(

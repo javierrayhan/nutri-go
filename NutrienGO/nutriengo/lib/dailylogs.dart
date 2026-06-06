@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'services/daily_log_service.dart';
-import 'services/food_service.dart';
 
 class LaporanScreen extends StatefulWidget {
   const LaporanScreen({super.key});
@@ -10,6 +9,10 @@ class LaporanScreen extends StatefulWidget {
 }
 
 class _LaporanScreenState extends State<LaporanScreen> {
+  List<double> _weeklyCalories = List.filled(7, 0.0);
+  List<String> _weeklyDays = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+  int _todayIndex = 0; // Untuk mendeteksi hari ini letaknya di bar mana
+  double _calorieGoal = 2500.0; // Angka target untuk batas atas grafik
   // Constants Colors
   final Color sageGreen = const Color(0xFF90A58D);
   final Color bgLight = const Color(0xFFF4F7F4);
@@ -18,136 +21,172 @@ class _LaporanScreenState extends State<LaporanScreen> {
   final Color cardBorder = const Color(0xFFE2E8F0);
   final Color warningColor = const Color(0xFFE53E3E);
 
-  // State
-  int _selectedDate = 6; // Default hari ini (Asumsi Juni 2026)
-  final String _currentMonthYear = "Juni 2026";
+  // State Management
+  DateTime _currentDate = DateTime.now(); // Gunakan DateTime asli agar akurat
   bool _isLoading = true;
-  double _totalDayCalories = 0.0;
-  List<dynamic> _foods = [];
-  List<Map<String, dynamic>> _dailyLogs = [];
+  double _dailyTotalCals = 0.0;
 
-  final DailyLogService _dailyLogService = DailyLogService();
-  final FoodService _foodService = FoodService();
+  // Data Asli dari Server
+  List<Map<String, dynamic>> _dailyLogs = [];
 
   @override
   void initState() {
     super.initState();
-    _initData();
+    _fetchDailyLogs(_currentDate);
+    _fetchWeeklyData();
   }
 
-  Future<void> _initData() async {
-    _foods = await _foodService.getFoods();
-    await _fetchDailyLogs();
+  double _safeDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  Future<void> _fetchDailyLogs() async {
+  // --- FUNGSI UTAMA: MENARIK DATA DARI SERVER ---
+  Future<void> _fetchDailyLogs(DateTime date) async {
     setState(() => _isLoading = true);
-    final formattedDate = '2026-06-${_selectedDate.toString().padLeft(2, '0')}';
-    final rawLogs = await _dailyLogService.getDailyLogs(formattedDate);
 
-    if (rawLogs.isEmpty) {
-      // Pake data dummy jika kosong
-      setState(() {
-        _dailyLogs = [
-          {
-            'waktu_makan': 'SARAPAN',
-            'items': [
-              {
-                'nama': 'Oatmeal Buah (Dummy)',
-                'gramasi': 150,
-                'karbo': 27.0,
-                'protein': 5.0,
-                'lemak': 3.0,
-                'kalori': 155,
-              },
-              {
-                'nama': 'Susu Almond (Dummy)',
-                'gramasi': 200,
-                'karbo': 2.0,
-                'protein': 1.0,
-                'lemak': 2.5,
-                'kalori': 30,
-              },
-            ],
-          },
-          {
-            'waktu_makan': 'MAKAN SIANG',
-            'items': [
-              {
-                'nama': 'Dada Ayam Bakar (Dummy)',
-                'gramasi': 150,
-                'karbo': 0.0,
-                'protein': 46.0,
-                'lemak': 5.0,
-                'kalori': 240,
-              },
-            ],
-          },
-        ];
-        _totalDayCalories = 425.0; // 155 + 30 + 240
-        _isLoading = false;
-      });
-      return;
-    }
+    // Format tanggal ke YYYY-MM-DD
+    String formattedDate = date.toIso8601String().split('T')[0];
 
-    Map<String, List<Map<String, dynamic>>> grouped = {
-      'SARAPAN': [],
-      'MAKAN SIANG': [],
-      'MAKAN MALAM': [],
+    DailyLogService logService = DailyLogService();
+    List<dynamic> logs = await logService.getDailyLogs(formattedDate);
+
+    // Keranjang pengelompokan berdasarkan Waktu Makan
+    Map<String, List<dynamic>> groupedLogs = {
+      'BREAKFAST': [],
+      'LUNCH': [],
       'SNACK': [],
+      'DINNER': [],
     };
 
-    double dayCals = 0;
+    double tempTotalCals = 0;
 
-    for (var log in rawLogs) {
-      String mealTimeRaw = log['mealTime'] ?? '';
-      String mealGroup = 'SNACK';
-      if (mealTimeRaw == 'BREAKFAST') mealGroup = 'SARAPAN';
-      else if (mealTimeRaw == 'LUNCH') mealGroup = 'MAKAN SIANG';
-      else if (mealTimeRaw == 'DINNER') mealGroup = 'MAKAN MALAM';
+    // Looping dan kelompokkan data
+    for (var log in logs) {
+      String time = log['mealTime'] ?? 'SNACK';
 
-      var food = _foods.firstWhere(
-        (f) => f['id'] == log['foodId'],
-        orElse: () => null,
-      );
-      String foodName = food != null ? food['name'] : 'Item ID ${log['foodId']}';
+      // Ambil nama makanan (Join Table Damar)
+      String foodName = (log['food'] != null && log['food']['name'] != null)
+          ? log['food']['name']
+          : 'Makanan Tdk Diketahui';
 
-      double cals = _toDouble(log['totalCalories']);
-      dayCals += cals;
-
-      grouped[mealGroup]!.add({
+      Map<String, dynamic> item = {
         'nama': foodName,
-        'gramasi': _toInt(log['consumtionGram']),
-        'karbo': _toDouble(log['totalCarbs']),
-        'protein': _toDouble(log['totalProtein']),
-        'lemak': _toDouble(log['totalFat']),
-        'kalori': cals.round(),
+        'gramasi': log['consumtionGram'] ?? 0,
+        'karbo': _safeDouble(log['totalCarbs']),
+        'protein': _safeDouble(log['totalProtein']),
+        'lemak': _safeDouble(log['totalFat']),
+        'kalori': _safeDouble(log['totalCalories']).toInt(),
+      };
+
+      if (groupedLogs.containsKey(time)) {
+        groupedLogs[time]!.add(item);
+      } else {
+        groupedLogs['SNACK']!.add(item); // Default fallback
+      }
+
+      tempTotalCals += _safeDouble(log['totalCalories']);
+    }
+
+    // Susun ulang ke format yang dimengerti oleh UI buatan Jev
+    List<Map<String, dynamic>> finalDisplayLogs = [];
+
+    if (groupedLogs['BREAKFAST']!.isNotEmpty) {
+      finalDisplayLogs.add({
+        'waktu_makan': 'SARAPAN',
+        'items': groupedLogs['BREAKFAST'],
+      });
+    }
+    if (groupedLogs['LUNCH']!.isNotEmpty) {
+      finalDisplayLogs.add({
+        'waktu_makan': 'MAKAN SIANG',
+        'items': groupedLogs['LUNCH'],
+      });
+    }
+    if (groupedLogs['SNACK']!.isNotEmpty) {
+      finalDisplayLogs.add({
+        'waktu_makan': 'CEMILAN',
+        'items': groupedLogs['SNACK'],
+      });
+    }
+    if (groupedLogs['DINNER']!.isNotEmpty) {
+      finalDisplayLogs.add({
+        'waktu_makan': 'MAKAN MALAM',
+        'items': groupedLogs['DINNER'],
       });
     }
 
-    final formattedLogs = grouped.entries
-        .where((entry) => entry.value.isNotEmpty)
-        .map((e) => {'waktu_makan': e.key, 'items': e.value})
-        .toList();
-
     setState(() {
-      _dailyLogs = formattedLogs;
-      _totalDayCalories = dayCals;
+      _dailyLogs = finalDisplayLogs;
+      _dailyTotalCals = tempTotalCals;
       _isLoading = false;
     });
   }
 
-  double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
+  // --- FUNGSI SIHIR: PARALLEL FETCH 7 HARI ---
+  Future<void> _fetchWeeklyData() async {
+    DailyLogService logService = DailyLogService();
+    List<Future<void>> futures = [];
+    List<double> tempWeeklyCals = List.filled(7, 0.0);
+    List<String> tempDays = List.filled(7, '');
+
+    // Cari hari ini ada di index ke berapa (1 = Senin, 7 = Minggu)
+    int currentWeekday = _currentDate.weekday;
+    _todayIndex = currentWeekday - 1; // Array mulai dari 0
+
+    // Kita looping 7 hari dari Senin sampai Minggu di minggu ini
+    for (int i = 0; i < 7; i++) {
+      // Hitung selisih hari (mundur/maju) dari hari ini
+      DateTime dayInWeek = _currentDate.subtract(
+        Duration(days: _todayIndex - i),
+      );
+
+      // Ambil singkatan nama harinya (Sen, Sel, Rab, dll)
+      const hari = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+      tempDays[i] = hari[i];
+
+      // Format YYYY-MM-DD
+      String formattedDate = dayInWeek.toIso8601String().split('T')[0];
+
+      // Tembak API barengan!
+      futures.add(
+        logService.getDailyLogs(formattedDate).then((logs) {
+          double totalCalDay = 0;
+          for (var log in logs) {
+            totalCalDay += _safeDouble(log['totalCalories']);
+          }
+          tempWeeklyCals[i] = totalCalDay; // Masukkan ke wadah sesuai harinya
+        }),
+      );
+    }
+
+    // Tunggu SEMUA 7 API selesai loading
+    await Future.wait(futures);
+
+    setState(() {
+      _weeklyCalories = tempWeeklyCals;
+      _weeklyDays = tempDays;
+    });
   }
 
-  int _toInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? (double.tryParse(value)?.toInt() ?? 0);
-    return 0;
+  // --- HELPER UNTUK NAMA BULAN ---
+  String _getMonthName(int month) {
+    const months = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+    return months[month - 1];
   }
 
   void _showToast(String message) {
@@ -171,20 +210,20 @@ class _LaporanScreenState extends State<LaporanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String displayMonthYear =
+        '${_getMonthName(_currentDate.month)} ${_currentDate.year}';
+
     return Scaffold(
       backgroundColor: bgLight,
       body: Stack(
         children: [
-          // Background Header
           ClipPath(
             clipper: HeaderClipper(),
             child: Container(height: 280, color: sageGreen),
           ),
-
           SafeArea(
             child: Column(
               children: [
-                // Top Bar with Date Picker Trigger
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
                   child: Row(
@@ -203,13 +242,12 @@ class _LaporanScreenState extends State<LaporanScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // Tanggal Button
                           GestureDetector(
                             onTap: _showDatePickerSheet,
                             child: Row(
                               children: [
                                 Text(
-                                  '$_selectedDate $_currentMonthYear',
+                                  '${_currentDate.day} $displayMonthYear',
                                   style: const TextStyle(
                                     fontSize: 14,
                                     color: Colors.white,
@@ -241,7 +279,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                   ),
                 ),
 
-                // Scrollable Content
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -251,7 +288,29 @@ class _LaporanScreenState extends State<LaporanScreen> {
                         const SizedBox(height: 16),
                         _buildWeeklyChart(),
                         const SizedBox(height: 32),
-                        _buildDailyLogsSection(),
+
+                        // AREA LOG HARIAN
+                        _isLoading
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(40),
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFF90A58D),
+                                  ),
+                                ),
+                              )
+                            : _dailyLogs.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(40),
+                                  child: Text(
+                                    'Belum ada catatan makanan di hari ini.',
+                                    style: TextStyle(color: textLight),
+                                  ),
+                                ),
+                              )
+                            : _buildDailyLogsSection(displayMonthYear),
+
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -278,7 +337,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'RATA-RATA HARIAN',
+            'TOTAL KALORI HARIAN',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -291,8 +350,9 @@ class _LaporanScreenState extends State<LaporanScreen> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
+              // MENAMPILKAN TOTAL KALORI ASLI DARI DATABASE
               Text(
-                '${_totalDayCalories.round()}',
+                '${_dailyTotalCals.toInt()}',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
@@ -312,12 +372,11 @@ class _LaporanScreenState extends State<LaporanScreen> {
           ),
           const SizedBox(height: 24),
 
-          // Chart Graphic
+          // Chart Graphic (Sementara Dibiarkan Statis dari Jev)
           SizedBox(
             height: 120,
             child: Stack(
               children: [
-                // Target Line (Dashed via custom layout)
                 Positioned(
                   top: 30,
                   left: 0,
@@ -333,31 +392,46 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       return Flex(
                         direction: Axis.horizontal,
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: List.generate(dashCount, (_) {
-                          return Container(
+                        children: List.generate(
+                          dashCount,
+                          (_) => Container(
                             width: dashWidth,
                             height: 1,
                             color: Colors.grey.shade300,
-                          );
-                        }),
+                          ),
+                        ),
                       );
                     },
                   ),
                 ),
-
-                // Bars Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _buildChartBar('Sen', 0.85, sageGreen),
-                    _buildChartBar('Sel', 0.95, sageGreen),
-                    _buildChartBar('Rab', 1.0, warningColor), // Overshoot!
-                    _buildChartBar('Kam', 0.90, sageGreen),
-                    _buildChartBar('Jum', 1.0, sageGreen, isToday: true),
-                    _buildChartBar('Sab', 0.0, sageGreen, isFuture: true),
-                    _buildChartBar('Min', 0.0, sageGreen, isFuture: true),
-                  ],
+                  children: List.generate(7, (index) {
+                    // Hitung persentase kalori (max 1.0 supaya bar tidak keluar batas)
+                    double percentage = _calorieGoal > 0
+                        ? (_weeklyCalories[index] / _calorieGoal).clamp(
+                            0.0,
+                            1.0,
+                          )
+                        : 0.0;
+
+                    // Kalau over target, kasih warna merah peringatan
+                    Color barColor = percentage >= 1.0
+                        ? warningColor
+                        : sageGreen;
+
+                    bool isToday = index == _todayIndex;
+                    bool isFuture = index > _todayIndex; // Hari esok abu-abu
+
+                    return _buildChartBar(
+                      _weeklyDays[index],
+                      percentage,
+                      barColor,
+                      isToday: isToday,
+                      isFuture: isFuture,
+                    );
+                  }),
                 ),
               ],
             ),
@@ -410,14 +484,14 @@ class _LaporanScreenState extends State<LaporanScreen> {
     );
   }
 
-  Widget _buildDailyLogsSection() {
+  Widget _buildDailyLogsSection(String displayMonthYear) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 16),
           child: Text(
-            'DETAIL LOG ($_selectedDate $_currentMonthYear)'.toUpperCase(),
+            'DETAIL LOG (${_currentDate.day} $displayMonthYear)'.toUpperCase(),
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -426,31 +500,12 @@ class _LaporanScreenState extends State<LaporanScreen> {
             ),
           ),
         ),
-
-        if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.only(top: 40),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_dailyLogs.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 40),
-            child: Center(
-              child: Text(
-                'Belum ada log makanan.',
-                style: TextStyle(color: textLight, fontWeight: FontWeight.w500),
-              ),
-            ),
-          )
-        else
-          // Loop Through Groups
-          ..._dailyLogs.map((group) {
+        ..._dailyLogs.map((group) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header (e.g. SARAPAN)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.only(left: 4, bottom: 8),
@@ -469,8 +524,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // Group Wrapper
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -481,7 +534,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                     children: List.generate(group['items'].length, (index) {
                       final item = group['items'][index];
                       final isLast = index == group['items'].length - 1;
-
                       return Column(
                         children: [
                           _buildLogItemRow(item),
@@ -533,9 +585,8 @@ class _LaporanScreenState extends State<LaporanScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Text K P L Minimalis
                 Text(
-                  'Karbo ${item['karbo']}g • Protein ${item['protein']}g • Lemak ${item['lemak']}g',
+                  'Karbo ${item['karbo'].toStringAsFixed(1)}g • Pro ${item['protein'].toStringAsFixed(1)}g • Fat ${item['lemak'].toStringAsFixed(1)}g',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -572,8 +623,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
   }
 
   void _showDatePickerSheet() {
-    // We use a temporary variable so we don't update the UI until 'Terapkan' is pressed
-    int tempSelectedDate = _selectedDate;
+    int tempSelectedDate = _currentDate.day;
 
     showModalBottomSheet(
       context: context,
@@ -591,7 +641,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Handle
                   Container(
                     margin: const EdgeInsets.only(top: 16, bottom: 16),
                     width: 48,
@@ -601,8 +650,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-
-                  // Header Modal
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -627,8 +674,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       ],
                     ),
                   ),
-
-                  // Calendar Navigation
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -642,7 +687,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
                           icon: const Icon(Icons.chevron_left_rounded),
                         ),
                         Text(
-                          _currentMonthYear,
+                          '${_getMonthName(_currentDate.month)} ${_currentDate.year}',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: textDark,
@@ -656,8 +701,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       ],
                     ),
                   ),
-
-                  // Days Header
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -666,26 +709,24 @@ class _LaporanScreenState extends State<LaporanScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children:
-                          ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'].map(
-                            (day) {
-                              return Expanded(
-                                child: Center(
-                                  child: Text(
-                                    day,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: textLight,
+                          ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN']
+                              .map(
+                                (day) => Expanded(
+                                  child: Center(
+                                    child: Text(
+                                      day,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: textLight,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              );
-                            },
-                          ).toList(),
+                              )
+                              .toList(),
                     ),
                   ),
-
-                  // Calendar Grid
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -694,7 +735,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
                     child: GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: 30, // Mock 30 days
+                      itemCount: 30,
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 7,
@@ -704,7 +745,6 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       itemBuilder: (context, index) {
                         final day = index + 1;
                         final isSelected = day == tempSelectedDate;
-
                         return GestureDetector(
                           onTap: () {
                             setModalState(() {
@@ -735,10 +775,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
                       },
                     ),
                   ),
-
                   const SizedBox(height: 16),
-
-                  // Actions
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Row(
@@ -763,17 +800,17 @@ class _LaporanScreenState extends State<LaporanScreen> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () async {
-                              // Apply the date and simulate API fetch
-                              setState(() {
-                                _selectedDate = tempSelectedDate;
-                              });
+                            onPressed: () {
                               Navigator.pop(context);
-                              _showToast(
-                                'Menarik data untuk $_selectedDate $_currentMonthYear...',
-                              );
-
-                              await _fetchDailyLogs();
+                              // SET TANGGAL BARU DAN TARIK ULANG DARI SERVER
+                              setState(() {
+                                _currentDate = DateTime(
+                                  _currentDate.year,
+                                  _currentDate.month,
+                                  tempSelectedDate,
+                                );
+                              });
+                              _fetchDailyLogs(_currentDate);
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: sageGreen,

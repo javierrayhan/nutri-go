@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'services/profile_service.dart';
+import 'services/profile_service.dart'; // Import Service Asli Anda
+import 'services/auth_service.dart'; // Import AuthService untuk fungsi getUserMe
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -14,59 +13,344 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _profileData;
-  Map<String, dynamic>? _userData;
+  Map<String, dynamic>? _userData; // Menyimpan data email dari Auth
+
   final ProfileService _profileService = ProfileService();
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
-    _fetchProfileData();
+    _fetchAllData();
   }
 
-  Future<void> _fetchProfileData() async {
-    // Also fetch user data by calling /api/auth/me inline or using a service
-    final data = await _profileService.getProfile();
+  // --- FUNGSI BARU: TARIK DATA PROFIL & USER BARENGAN ---
+  Future<void> _fetchAllData() async {
+    setState(() => _isLoading = true);
 
-    // Quick inline fetch for user info
-    Map<String, dynamic>? userData;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
-      if (token != null) {
-        final response = await http.get(
-          Uri.parse('https://api-nutrigo.vercel.app/api/auth/me'),
-          headers: {'Authorization': 'Bearer $token'},
-        );
-        if (response.statusCode == 200) {
-          final json = jsonDecode(response.body);
-          if (json['data'] != null) userData = json['data'];
-        }
-      }
-    } catch (e) {
-      debugPrint('Error get me: $e');
-    }
+    // Jalan paralel biar lebih cepat
+    final profileResponse = await _profileService.getProfile();
+    final userResponse = await _authService
+        .getUserMe(); // Pastikan AuthService punya fungsi getUserMe()
 
     setState(() {
-      _profileData = data;
-      _userData = userData;
+      _profileData = profileResponse;
+      _userData = userResponse;
       _isLoading = false;
     });
   }
 
-  String _formatGender(String? raw) {
-    if (raw == 'MALE') return 'Laki-Laki';
-    if (raw == 'FEMALE') return 'Perempuan';
-    return raw ?? '-';
+  // --- FUNGSI BARU: LOG OUT SAKRAL ---
+  Future<void> _performLogOut() async {
+    // 1. Tampilkan loading sebentar biar terasa natural
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF90A58D)),
+      ),
+    );
+
+    // 2. Hapus JWT Token dari Brankas HP
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('jwt_token');
+
+    // 3. Tutup Dialog Loading
+    Navigator.pop(context);
+
+    // 4. Tendang user balik ke halaman Login dan hapus history route
+    // Pastikan Jev mendaftarkan route '/login' di main.dart
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  String _formatGoal(String? raw) {
-    if (raw == 'LOSE_WEIGHT') return 'Turunkan BB';
-    if (raw == 'MAINTAIN_WEIGHT') return 'Jaga BB';
-    if (raw == 'GAIN_WEIGHT') return 'Naikkan BB';
-    return raw ?? '-';
+  // --- FUNGSI MUNCULKAN FORM EDIT PROFIL (VERSI FIX INDEFINITE LOADING) ---
+  void _showEditProfileModal() {
+    if (_profileData == null) return;
+
+    int age = _profileData!['age'] ?? 25;
+    double height = _safeDouble(_profileData!['height']);
+    double weight = _safeDouble(_profileData!['weight']);
+    double weightGoal = _safeDouble(_profileData!['weightGoal']);
+    String gender = _profileData!['gender'] == 'Laki-Laki' ? 'MALE' : 'FEMALE';
+    String activityLevel = 'MODERATE';
+    String goal = 'MAINTAINING';
+
+    if (_profileData!['activityLevel'] == 'Sangat Aktif')
+      activityLevel = 'VERY_ACTIVE';
+    if (_profileData!['activityLevel'] == 'Ekstra Aktif')
+      activityLevel = 'EXTRA_ACTIVE';
+    if (_profileData!['activityLevel'] == 'Sedikit Aktif')
+      activityLevel = 'LIGHTLY_ACTIVE';
+    if (_profileData!['activityLevel'] == 'Jarang Bergerak')
+      activityLevel = 'SEDENTARY';
+
+    String currentGoal = (_profileData!['goal'] ?? '').toString().toUpperCase();
+    if (currentGoal == 'BULKING') goal = 'BULKING';
+    if (currentGoal == 'CUTTING') goal = 'CUTTING';
+    if (currentGoal == 'MAINTAINING') goal = 'MAINTAINING';
+
+    if (_profileData!['gender'] == 'Perempuan') gender = 'FEMALE';
+
+    // Buat variabel loading lokal khusus untuk modal sheet
+    bool isModalSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Update Profil & Target',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: age.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Umur',
+                            ),
+                            onChanged: (val) => age = int.tryParse(val) ?? age,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: height.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Tinggi (cm)',
+                            ),
+                            onChanged: (val) =>
+                                height = double.tryParse(val) ?? height,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: weight.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Berat (kg)',
+                            ),
+                            onChanged: (val) =>
+                                weight = double.tryParse(val) ?? weight,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: weightGoal.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Target (kg)',
+                              labelStyle: TextStyle(
+                                color: Color(0xFF90A58D),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            onChanged: (val) =>
+                                weightGoal = double.tryParse(val) ?? weightGoal,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    DropdownButtonFormField<String>(
+                      value: gender,
+                      decoration: const InputDecoration(
+                        labelText: 'Jenis Kelamin',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'MALE',
+                          child: Text('Laki-Laki'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'FEMALE',
+                          child: Text('Perempuan'),
+                        ),
+                      ],
+                      onChanged: (val) => setModalState(() => gender = val!),
+                    ),
+                    const SizedBox(height: 16),
+
+                    DropdownButtonFormField<String>(
+                      value: activityLevel,
+                      decoration: const InputDecoration(
+                        labelText: 'Level Aktivitas',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'SEDENTARY',
+                          child: Text('Jarang Bergerak'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'LIGHTLY_ACTIVE',
+                          child: Text('Sedikit Aktif'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'MODERATE',
+                          child: Text('Cukup Aktif'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'VERY_ACTIVE',
+                          child: Text('Sangat Aktif'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'EXTRA_ACTIVE',
+                          child: Text('Ekstra Aktif'),
+                        ),
+                      ],
+                      onChanged: (val) =>
+                          setModalState(() => activityLevel = val!),
+                    ),
+                    const SizedBox(height: 16),
+
+                    DropdownButtonFormField<String>(
+                      value: goal,
+                      decoration: const InputDecoration(
+                        labelText: 'Target Tubuh',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'CUTTING',
+                          child: Text('Cutting (Turun Berat)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'MAINTAINING',
+                          child: Text('Maintain (Jaga Berat)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'BULKING',
+                          child: Text('Bulking (Naik Berat)'),
+                        ),
+                      ],
+                      onChanged: (val) => setModalState(() => goal = val!),
+                    ),
+                    const SizedBox(height: 30),
+
+                    // Tombol Simpan Otomatis Loading Internal
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF90A58D),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        // Nonaktifkan tombol klik jika sedang loading
+                        onPressed: isModalSaving
+                            ? null
+                            : () async {
+                                // 1. Set status loading internal modal
+                                setModalState(() {
+                                  isModalSaving = true;
+                                });
+
+                                // 2. Jalankan pengiriman data ke Damar
+                                bool success = await _profileService
+                                    .updateProfile({
+                                      "age": age,
+                                      "height": height,
+                                      "weight": weight,
+                                      "weightGoal": weightGoal,
+                                      "gender": gender,
+                                      "activityLevel": activityLevel,
+                                      "goal": goal,
+                                    });
+
+                                // Pengaman tambahan jika user terburu-buru keluar halaman
+                                if (!mounted) return;
+
+                                if (success) {
+                                  // 3. Jika sukses, baru tutup Modal Sheet-nya
+                                  Navigator.pop(context);
+                                  _showToast(
+                                    context,
+                                    'Profil berhasil diupdate!',
+                                  );
+                                  _fetchAllData(); // Refresh layar utama agar angka berganti
+                                } else {
+                                  // 4. Jika gagal, matikan loading agar user bisa mencoba klik lagi
+                                  setModalState(() {
+                                    isModalSaving = false;
+                                  });
+                                  _showToast(
+                                    context,
+                                    'Gagal mengupdate profil. Cek validasi server.',
+                                  );
+                                }
+                              },
+                        // Ubah teks tombol menjadi spinner muter jika status loading aktif
+                        child: isModalSaving
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Text(
+                                'SIMPAN PERUBAHAN',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
-  // Helper method for native-feeling toasts
+  // Tambahkan fungsi helper ini jika belum ada
+  double _safeDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
   void _showToast(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -97,7 +381,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: bgLight,
       body: Stack(
         children: [
-          // Curved Green Header Background
           ClipPath(
             clipper: HeaderClipper(),
             child: Container(height: 280, color: sageGreen),
@@ -105,7 +388,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SafeArea(
             child: Column(
               children: [
-                // Top Bar
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
                   child: Row(
@@ -134,7 +416,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
 
-                // Scrollable Content
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -143,12 +424,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         const SizedBox(height: 30),
 
-                        // Profile Card with Overlapping Avatar
                         Stack(
                           clipBehavior: Clip.none,
                           alignment: Alignment.topCenter,
                           children: [
-                            // The White Card
                             Container(
                               margin: const EdgeInsets.only(top: 48),
                               padding: const EdgeInsets.fromLTRB(
@@ -171,8 +450,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               child: Column(
                                 children: [
+                                  // NAMA USER DARI DATABASE AUTH
                                   Text(
-                                    'Hi, ${_userData?['email']?.split('@').first ?? 'User'}!',
+                                    _userData != null
+                                        ? _userData!['email']
+                                              .split('@')[0]
+                                              .toUpperCase()
+                                        : 'Rian',
                                     style: const TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
@@ -180,13 +464,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
+                                  // DATA GENDER DAN GOAL DARI PROFILE
                                   Text(
                                     _isLoading
                                         ? 'Memuat data...'
                                         : (_profileData != null
-                                              ? '${_formatGender(_profileData!['gender'])} • ${_formatGoal(_profileData!['goal'])}'
-                                              : (_userData?['email'] ??
-                                                    'Membuat profil...')),
+                                              ? '${_profileData!['gender']} • ${_profileData!['goal']}'
+                                              : (_userData != null
+                                                    ? _userData!['email']
+                                                    : 'user@nutriengo.com')),
                                     style: const TextStyle(
                                       fontSize: 14,
                                       color: textLight,
@@ -201,7 +487,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 20),
 
-                                  // Mini Stats
                                   _isLoading
                                       ? const Padding(
                                           padding: EdgeInsets.all(20.0),
@@ -239,8 +524,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ],
                               ),
                             ),
-
-                            // Overlapping Avatar
                             Positioned(
                               top: 0,
                               child: Container(
@@ -275,7 +558,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                         const SizedBox(height: 32),
 
-                        // Account Settings Menu
                         const Padding(
                           padding: EdgeInsets.only(left: 8.0, bottom: 12.0),
                           child: Text(
@@ -298,25 +580,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             children: [
                               _buildMenuTile(
                                 context,
-                                title: 'Edit Data Diri',
-                                onTap: () => _showToast(
-                                  context,
-                                  'Menu Edit Profil di-klik',
-                                ),
-                              ),
-                              const Divider(
-                                height: 1,
-                                color: Color(0xFFF1F5F9),
-                                indent: 16,
-                                endIndent: 16,
-                              ),
-                              _buildMenuTile(
-                                context,
-                                title: 'Ubah Target Nutrisi',
-                                onTap: () => _showToast(
-                                  context,
-                                  'Menu Target Nutrisi di-klik',
-                                ),
+                                title: 'Update Profil & Target',
+                                onTap: _showEditProfileModal,
                               ),
                             ],
                           ),
@@ -324,7 +589,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                         const SizedBox(height: 24),
 
-                        // Others Menu
                         const Padding(
                           padding: EdgeInsets.only(left: 8.0, bottom: 12.0),
                           child: Text(
@@ -348,18 +612,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context,
                             title: 'Keluar (Log Out)',
                             textColor: Colors.redAccent,
-                            onTap: () async {
-                              _showToast(context, 'Proses Log Out...');
-                              final prefs =
-                                  await SharedPreferences.getInstance();
-                              await prefs.remove('jwt_token');
-                              if (context.mounted) {
-                                Navigator.pushReplacementNamed(
-                                  context,
-                                  '/login',
-                                );
-                              }
-                            },
+                            onTap: _performLogOut, // SAMBUNGKAN FUNGSI LOGOUT!
                           ),
                         ),
                       ],
@@ -374,8 +627,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       bottomNavigationBar: _buildBottomNav(context),
     );
   }
-
-  // --- COMPONENT BUILDERS ---
 
   Widget _buildMiniStat(
     String label,
@@ -447,7 +698,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- BOTTOM NAV ---
   Widget _buildBottomNav(BuildContext context) {
     return Container(
       height: 80,
@@ -508,7 +758,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (!isActive) Navigator.pushReplacementNamed(context, route);
       },
       child: Container(
-        color: Colors.transparent, // Increases tap target area
+        color: Colors.transparent,
         width: 64,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -530,8 +780,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// --- CUSTOM CLIPPER ---
-// Reused from your previous screens to keep it self-contained
 class HeaderClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {

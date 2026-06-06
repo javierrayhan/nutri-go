@@ -75,4 +75,31 @@ class ProfileService {
       return null;
     }
   }
+
+  // --- FUNGSI BARU: UPDATE PROFIL (PUT) ---
+  Future<bool> updateProfile(Map<String, dynamic> data) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      final response = await http.put(
+        Uri.parse(baseUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(data),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print('Gagal Update Profil: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error Update Profil: $e');
+      return false;
+    }
+  }
 }
