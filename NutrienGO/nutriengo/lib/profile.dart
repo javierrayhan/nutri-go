@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-// Import http, convert, dan shared_prefs dihapus biar clean
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/profile_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,6 +14,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _profileData;
+  Map<String, dynamic>? _userData;
   final ProfileService _profileService = ProfileService();
 
   @override
@@ -20,11 +24,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _fetchProfileData() async {
+    // Also fetch user data by calling /api/auth/me inline or using a service
     final data = await _profileService.getProfile();
+
+    // Quick inline fetch for user info
+    Map<String, dynamic>? userData;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt_token');
+      if (token != null) {
+        final response = await http.get(
+          Uri.parse('https://api-nutrigo.vercel.app/api/auth/me'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          if (json['data'] != null) userData = json['data'];
+        }
+      }
+    } catch (e) {
+      debugPrint('Error get me: $e');
+    }
+
     setState(() {
       _profileData = data;
+      _userData = userData;
       _isLoading = false;
     });
+  }
+
+  String _formatGender(String? raw) {
+    if (raw == 'MALE') return 'Laki-Laki';
+    if (raw == 'FEMALE') return 'Perempuan';
+    return raw ?? '-';
+  }
+
+  String _formatGoal(String? raw) {
+    if (raw == 'LOSE_WEIGHT') return 'Turunkan BB';
+    if (raw == 'MAINTAIN_WEIGHT') return 'Jaga BB';
+    if (raw == 'GAIN_WEIGHT') return 'Naikkan BB';
+    return raw ?? '-';
   }
 
   // Helper method for native-feeling toasts
@@ -132,9 +171,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               child: Column(
                                 children: [
-                                  const Text(
-                                    'Hi, User!',
-                                    style: TextStyle(
+                                  Text(
+                                    'Hi, ${_userData?['email']?.split('@').first ?? 'User'}!',
+                                    style: const TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
                                       color: textDark,
@@ -145,8 +184,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     _isLoading
                                         ? 'Memuat data...'
                                         : (_profileData != null
-                                              ? '${_profileData!['gender']} • ${_profileData!['goal']}'
-                                              : 'user@nutriengo.com'),
+                                              ? '${_formatGender(_profileData!['gender'])} • ${_formatGoal(_profileData!['goal'])}'
+                                              : (_userData?['email'] ??
+                                                    'Membuat profil...')),
                                     style: const TextStyle(
                                       fontSize: 14,
                                       color: textLight,
@@ -308,8 +348,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context,
                             title: 'Keluar (Log Out)',
                             textColor: Colors.redAccent,
-                            onTap: () =>
-                                _showToast(context, 'Proses Log Out...'),
+                            onTap: () async {
+                              _showToast(context, 'Proses Log Out...');
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              await prefs.remove('jwt_token');
+                              if (context.mounted) {
+                                Navigator.pushReplacementNamed(
+                                  context,
+                                  '/login',
+                                );
+                              }
+                            },
                           ),
                         ),
                       ],
@@ -502,39 +552,4 @@ class HeaderClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
-}
-
-// --- SERVICE (DUMMY VERSION) ---
-class ProfileService {
-  // Fungsi Dummy untuk simulasi post data
-  Future<bool> createProfile({
-    required int age,
-    required double height,
-    required double weight,
-    required double weightGoal,
-    required String gender,
-    required String activityLevel,
-    required String goal,
-  }) async {
-    // Simulasi nunggu loading server 1 detik
-    await Future.delayed(const Duration(seconds: 1));
-    return true;
-  }
-
-  // Fungsi Dummy untuk simulasi get data
-  Future<Map<String, dynamic>?> getProfile() async {
-    // Simulasi narik data dari server 1.5 detik
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    // Balikin Dummy Data persis kaya struktur Swagger
-    return {
-      'age': 24,
-      'height': 170.0,
-      'weight': 67.0,
-      'weightGoal': 69.0,
-      'gender': 'Laki-Laki',
-      'activityLevel': 'Cukup Aktif',
-      'goal': 'Bulking',
-    };
-  }
 }

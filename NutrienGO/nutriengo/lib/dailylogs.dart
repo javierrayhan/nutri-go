@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'services/daily_log_service.dart';
+import 'services/food_service.dart';
 
 class LaporanScreen extends StatefulWidget {
   const LaporanScreen({super.key});
@@ -17,46 +19,136 @@ class _LaporanScreenState extends State<LaporanScreen> {
   final Color warningColor = const Color(0xFFE53E3E);
 
   // State
-  int _selectedDate = 5; // Default hari ini
+  int _selectedDate = 6; // Default hari ini (Asumsi Juni 2026)
   final String _currentMonthYear = "Juni 2026";
+  bool _isLoading = true;
+  double _totalDayCalories = 0.0;
+  List<dynamic> _foods = [];
+  List<Map<String, dynamic>> _dailyLogs = [];
 
-  // Data Mock (Sesuai skema database: waktu_makan, kalori_hitung, dll)
-  final List<Map<String, dynamic>> _dailyLogs = [
-    {
-      'waktu_makan': 'SARAPAN',
-      'items': [
-        {
-          'nama': 'Oatmeal Buah',
-          'gramasi': 150,
-          'karbo': 27.0,
-          'protein': 5.0,
-          'lemak': 3.0,
-          'kalori': 155,
-        },
-        {
-          'nama': 'Susu Almond',
-          'gramasi': 200,
-          'karbo': 2.0,
-          'protein': 1.0,
-          'lemak': 2.5,
-          'kalori': 30,
-        },
-      ],
-    },
-    {
-      'waktu_makan': 'MAKAN SIANG',
-      'items': [
-        {
-          'nama': 'Dada Ayam Bakar',
-          'gramasi': 150,
-          'karbo': 0.0,
-          'protein': 46.0,
-          'lemak': 5.0,
-          'kalori': 240,
-        },
-      ],
-    },
-  ];
+  final DailyLogService _dailyLogService = DailyLogService();
+  final FoodService _foodService = FoodService();
+
+  @override
+  void initState() {
+    super.initState();
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    _foods = await _foodService.getFoods();
+    await _fetchDailyLogs();
+  }
+
+  Future<void> _fetchDailyLogs() async {
+    setState(() => _isLoading = true);
+    final formattedDate = '2026-06-${_selectedDate.toString().padLeft(2, '0')}';
+    final rawLogs = await _dailyLogService.getDailyLogs(formattedDate);
+
+    if (rawLogs.isEmpty) {
+      // Pake data dummy jika kosong
+      setState(() {
+        _dailyLogs = [
+          {
+            'waktu_makan': 'SARAPAN',
+            'items': [
+              {
+                'nama': 'Oatmeal Buah (Dummy)',
+                'gramasi': 150,
+                'karbo': 27.0,
+                'protein': 5.0,
+                'lemak': 3.0,
+                'kalori': 155,
+              },
+              {
+                'nama': 'Susu Almond (Dummy)',
+                'gramasi': 200,
+                'karbo': 2.0,
+                'protein': 1.0,
+                'lemak': 2.5,
+                'kalori': 30,
+              },
+            ],
+          },
+          {
+            'waktu_makan': 'MAKAN SIANG',
+            'items': [
+              {
+                'nama': 'Dada Ayam Bakar (Dummy)',
+                'gramasi': 150,
+                'karbo': 0.0,
+                'protein': 46.0,
+                'lemak': 5.0,
+                'kalori': 240,
+              },
+            ],
+          },
+        ];
+        _totalDayCalories = 425.0; // 155 + 30 + 240
+        _isLoading = false;
+      });
+      return;
+    }
+
+    Map<String, List<Map<String, dynamic>>> grouped = {
+      'SARAPAN': [],
+      'MAKAN SIANG': [],
+      'MAKAN MALAM': [],
+      'SNACK': [],
+    };
+
+    double dayCals = 0;
+
+    for (var log in rawLogs) {
+      String mealTimeRaw = log['mealTime'] ?? '';
+      String mealGroup = 'SNACK';
+      if (mealTimeRaw == 'BREAKFAST') mealGroup = 'SARAPAN';
+      else if (mealTimeRaw == 'LUNCH') mealGroup = 'MAKAN SIANG';
+      else if (mealTimeRaw == 'DINNER') mealGroup = 'MAKAN MALAM';
+
+      var food = _foods.firstWhere(
+        (f) => f['id'] == log['foodId'],
+        orElse: () => null,
+      );
+      String foodName = food != null ? food['name'] : 'Item ID ${log['foodId']}';
+
+      double cals = _toDouble(log['totalCalories']);
+      dayCals += cals;
+
+      grouped[mealGroup]!.add({
+        'nama': foodName,
+        'gramasi': _toInt(log['consumtionGram']),
+        'karbo': _toDouble(log['totalCarbs']),
+        'protein': _toDouble(log['totalProtein']),
+        'lemak': _toDouble(log['totalFat']),
+        'kalori': cals.round(),
+      });
+    }
+
+    final formattedLogs = grouped.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .map((e) => {'waktu_makan': e.key, 'items': e.value})
+        .toList();
+
+    setState(() {
+      _dailyLogs = formattedLogs;
+      _totalDayCalories = dayCals;
+      _isLoading = false;
+    });
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? (double.tryParse(value)?.toInt() ?? 0);
+    return 0;
+  }
 
   void _showToast(String message) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -200,7 +292,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                '1,850',
+                '${_totalDayCalories.round()}',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
@@ -335,8 +427,24 @@ class _LaporanScreenState extends State<LaporanScreen> {
           ),
         ),
 
-        // Loop Through Groups
-        ..._dailyLogs.map((group) {
+        if (_isLoading)
+          const Padding(
+            padding: EdgeInsets.only(top: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_dailyLogs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 40),
+            child: Center(
+              child: Text(
+                'Belum ada log makanan.',
+                style: TextStyle(color: textLight, fontWeight: FontWeight.w500),
+              ),
+            ),
+          )
+        else
+          // Loop Through Groups
+          ..._dailyLogs.map((group) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 24),
             child: Column(
@@ -655,7 +763,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () {
+                            onPressed: () async {
                               // Apply the date and simulate API fetch
                               setState(() {
                                 _selectedDate = tempSelectedDate;
@@ -665,8 +773,7 @@ class _LaporanScreenState extends State<LaporanScreen> {
                                 'Menarik data untuk $_selectedDate $_currentMonthYear...',
                               );
 
-                              // TODO: Call your service here
-                              // DailyLogService().getDailyLogs('2026-06-${_selectedDate.toString().padLeft(2, '0')}');
+                              await _fetchDailyLogs();
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: sageGreen,
