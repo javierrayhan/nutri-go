@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/profile_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AssessmentScreen extends StatefulWidget {
   const AssessmentScreen({super.key});
@@ -9,33 +10,31 @@ class AssessmentScreen extends StatefulWidget {
 }
 
 class _AssessmentScreenState extends State<AssessmentScreen> {
-  // Controllers for our text inputs
-  final TextEditingController _ageController = TextEditingController(
-    text: '67',
-  );
-  final TextEditingController _heightController = TextEditingController(
-    text: '167',
-  );
-  final TextEditingController _weightController = TextEditingController(
-    text: '67',
-  );
-  final TextEditingController _targetWeightController = TextEditingController(
-    text: '69',
-  );
+  final TextEditingController _ageController = TextEditingController();
+  final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _targetWeightController = TextEditingController();
 
-  // State variables for interactive elements
   String _selectedGender = 'Laki-Laki';
-  double _activityLevel = 0.0; // 0.0 = Jarang, 0.5 = Cukup Aktif, 1.0 = Aktif
+  double _activityLevel = 0.0;
   String _selectedTarget = 'Bulking';
-
   bool _isLoading = false;
 
-  // Core thematic colors extracted from the design
   final Color primaryGreen = const Color(0xFF8B9B82);
   final Color bgLight = const Color(0xFFF8F9F7);
   final Color textDark = const Color(0xFF2D3748);
   final Color textLight = const Color(0xFF718096);
   final Color cardBorder = const Color(0xFFE2E8F0);
+
+  @override
+  void initState() {
+    super.initState();
+    // Memantau inputan untuk mengaktifkan/menonaktifkan tombol Lanjut
+    _ageController.addListener(_updateFormState);
+    _heightController.addListener(_updateFormState);
+    _weightController.addListener(_updateFormState);
+    _targetWeightController.addListener(_updateFormState);
+  }
 
   @override
   void dispose() {
@@ -46,7 +45,17 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
     super.dispose();
   }
 
-  // Smart logic: Sync target weight if maintenance is selected
+  void _updateFormState() {
+    setState(() {});
+  }
+
+  bool get _isFormValid {
+    return _ageController.text.isNotEmpty &&
+        _heightController.text.isNotEmpty &&
+        _weightController.text.isNotEmpty &&
+        _targetWeightController.text.isNotEmpty;
+  }
+
   void _updateTarget(String target) {
     setState(() {
       _selectedTarget = target;
@@ -66,7 +75,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Header Section
               Text(
                 'Bantu kami mengenal\nkondisi badan kamu!',
                 style: TextStyle(
@@ -83,7 +91,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
               ),
               const SizedBox(height: 32),
 
-              // 2. Metrics Grid (2x2)
               Row(
                 children: [
                   Expanded(
@@ -131,7 +138,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
               ),
               const SizedBox(height: 32),
 
-              // 3. Gender Selection
               Text(
                 'Jenis Kelamin Biologis',
                 style: TextStyle(
@@ -150,7 +156,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
               ),
               const SizedBox(height: 32),
 
-              // 4. Activity Level Slider
               Text(
                 'Tingkat Aktivitas Harian',
                 style: TextStyle(
@@ -187,7 +192,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                         value: _activityLevel,
                         onChanged: (val) {
                           setState(() {
-                            // Snap to nearest 0.5 step
                             _activityLevel = (val * 2).round() / 2;
                           });
                         },
@@ -207,7 +211,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
               ),
               const SizedBox(height: 32),
 
-              // 5. Target Selection
               Text(
                 'Apa target kamu?',
                 style: TextStyle(
@@ -230,7 +233,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
               ),
               const SizedBox(height: 40),
 
-              // 6. Bottom Navigation Actions
               Row(
                 children: [
                   Expanded(
@@ -245,10 +247,10 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                             borderRadius: BorderRadius.circular(28),
                           ),
                         ),
-                        onPressed: _isLoading
+                        // Tombol dinonaktifkan jika loading atau form belum terisi penuh
+                        onPressed: (_isLoading || !_isFormValid)
                             ? null
                             : () async {
-                                // 1. Ambil & Validasi Angka
                                 final int umur =
                                     int.tryParse(_ageController.text) ?? 0;
                                 final double tinggi =
@@ -277,7 +279,50 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                                   return;
                                 }
 
-                                // 2. Penerjemah (Mapper) UI ke Backend Damar
+                                if (_selectedTarget == 'Cutting' &&
+                                    targetBerat >= berat) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Untuk Cutting, Target Berat harus LEBIH KECIL dari Berat Badan!',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if (_selectedTarget == 'Bulking' &&
+                                    targetBerat <= berat) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Untuk Bulking, Target Berat harus LEBIH BESAR dari Berat Badan!',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if (_selectedTarget == 'Maintenance' &&
+                                    targetBerat != berat) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Untuk Maintenance, Target Berat harus SAMA dengan Berat Badan!',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  // Auto-koreksi angkanya ke user
+                                  setState(() {
+                                    _targetWeightController.text = berat
+                                        .toString();
+                                  });
+                                  return;
+                                }
+
                                 String apiGender =
                                     _selectedGender == 'Laki-Laki'
                                     ? 'MALE'
@@ -301,7 +346,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                                   apiGoal = 'MAINTAINING';
                                 }
 
-                                // 3. Tembak API
                                 setState(() {
                                   _isLoading = true;
                                 });
@@ -319,12 +363,18 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                                       goal: apiGoal,
                                     );
 
+                                if (!mounted) return;
                                 setState(() {
                                   _isLoading = false;
                                 });
 
-                                // 4. Evaluasi
                                 if (isSuccess) {
+                                  SharedPreferences prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.setBool(
+                                    'is_profile_completed',
+                                    true,
+                                  );
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -333,7 +383,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
                                       backgroundColor: Colors.green,
                                     ),
                                   );
-                                  // Lanjut ke Dashboard/Home
                                   Navigator.pushReplacementNamed(
                                     context,
                                     '/home',
@@ -379,8 +428,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
     );
   }
 
-  // --- HELPER WIDGETS ---
-
   TextStyle _sliderLabelStyle() {
     return const TextStyle(
       fontSize: 11,
@@ -397,7 +444,6 @@ class _AssessmentScreenState extends State<AssessmentScreen> {
     bool isTarget = false,
     Function(String)? onChanged,
   }) {
-    // Slightly differentiate target weight background to imply it's a goal
     Color bgColor = isTarget ? const Color(0xFFF1F3F0) : Colors.white;
 
     return Container(

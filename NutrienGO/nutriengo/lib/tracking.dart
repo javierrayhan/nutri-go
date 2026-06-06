@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Tambahan Import Brankas
 import 'services/food_service.dart';
 import 'services/daily_log_service.dart';
 
@@ -10,6 +11,8 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen> {
+  String _firstName = 'User'; // Variabel nama dinamis
+
   List<Map<String, dynamic>> mealSchedules = [
     {
       'title': 'Makan Pagi',
@@ -52,7 +55,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
   List<dynamic> _allFoods = [];
   List<dynamic> _filteredFoods = [];
 
-  bool _isLoadingFoods = false;
   bool _isLoadingLogs = true;
 
   double _dailyTotalCals = 0;
@@ -74,6 +76,14 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
   Future<void> _loadTodayLogs() async {
     setState(() => _isLoadingLogs = true);
+
+    // Ambil nama pengguna
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? fullName = prefs.getString('user_fullname');
+    String fName = 'User';
+    if (fullName != null && fullName.trim().isNotEmpty) {
+      fName = fullName.trim().split(' ')[0];
+    }
 
     DailyLogService logService = DailyLogService();
     String todayDate = DateTime.now().toIso8601String().split('T')[0];
@@ -143,7 +153,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
       tempDailyFat += _safeDouble(log['totalFat']);
     }
 
+    if (!mounted) return;
     setState(() {
+      _firstName = fName; // Set nama dinamis
       mealSchedules = [
         grouped['BREAKFAST']!,
         grouped['LUNCH']!,
@@ -188,21 +200,18 @@ class _TrackingScreenState extends State<TrackingScreen> {
     });
   }
 
-  // --- OPTIMISTIC UI: PANGGIL API DIAM-DIAM DI BACKGROUND ---
   Future<void> _deleteLogItemBackground(int id, String foodName) async {
     DailyLogService logService = DailyLogService();
     bool success = await logService.deleteDailyLog(id);
 
-    // Kita HANYA memunculkan notifikasi kalau GAGAL menghapus.
-    // Kalau sukses, diam saja karena UI sudah bersih.
-    if (!success) {
+    if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Koneksi terputus. Gagal menghapus $foodName'),
           backgroundColor: Colors.red,
         ),
       );
-      _loadTodayLogs(); // Tarik ulang data asli dari server Damar untuk memperbaiki UI
+      _loadTodayLogs();
     }
   }
 
@@ -220,20 +229,20 @@ class _TrackingScreenState extends State<TrackingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 24.0, top: 20.0),
+                Padding(
+                  padding: const EdgeInsets.only(left: 24.0, top: 20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Hi, Rian!',
-                        style: TextStyle(
+                        'Hi, $_firstName!', // NAMA SUDAH DINAMIS
+                        style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      Text(
+                      const Text(
                         'Jurnal Harian',
                         style: TextStyle(
                           fontSize: 16,
@@ -432,7 +441,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-
                     if (items.isNotEmpty) ...[
                       const Divider(color: Color(0xFFEEEEEE), thickness: 1),
                       const SizedBox(height: 8),
@@ -453,7 +461,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                               size: 28,
                             ),
                           ),
-                          // OPTIMISTIC UI: LANGSUNG HAPUS SAAT DIGESER
                           onDismissed: (direction) {
                             double itemCals = _safeDouble(
                               item['totalCalories'],
@@ -463,23 +470,16 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             double itemFat = _safeDouble(item['totalFat']);
 
                             setState(() {
-                              // 1. Cabut item dari UI seketika
                               items.remove(item);
-
-                              // 2. Kurangi makro di kategori makan ini
                               meal['cals'] -= itemCals;
                               meal['protein'] -= itemPro;
                               meal['carbs'] -= itemCarbs;
                               meal['fat'] -= itemFat;
-
-                              // 3. Kurangi makro di Rekap Harian Atas
                               _dailyTotalCals -= itemCals;
                               _dailyTotalPro -= itemPro;
                               _dailyTotalCarbs -= itemCarbs;
                               _dailyTotalFat -= itemFat;
                             });
-
-                            // 4. Suruh satpam API kerja di background tanpa ketahuan
                             _deleteLogItemBackground(
                               item['id'],
                               item['foodName'],
@@ -526,7 +526,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       }).toList(),
                       const SizedBox(height: 16),
                     ],
-
                     TextButton.icon(
                       onPressed: () async {
                         if (_allFoods.isEmpty) {
@@ -540,13 +539,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             ),
                           );
                           await _fetchFoods();
-                          Navigator.pop(context);
+                          if (mounted) Navigator.pop(context);
                         }
-
                         setState(() {
                           _filteredFoods = _allFoods.take(10).toList();
                         });
-
                         _showSearchModal(
                           context,
                           meal['title'],
@@ -817,6 +814,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
       double? inputtedGram = await _showGramInputDialog(context, food);
 
       if (inputtedGram != null && inputtedGram > 0) {
+        if (!mounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -846,22 +844,24 @@ class _TrackingScreenState extends State<TrackingScreen> {
         };
 
         bool success = await logService.createDailyLog(payload);
+        if (!mounted) return;
         Navigator.pop(context);
 
-        if (success)
+        if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('${food['name']} dicatat!'),
               backgroundColor: Colors.green,
             ),
           );
-        else
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Gagal mencatat ${food['name']}'),
               backgroundColor: Colors.red,
             ),
           );
+        }
       }
     }
 
@@ -993,9 +993,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     ),
                   ),
                   onPressed: inputGrams > 0
-                      ? () {
-                          Navigator.pop(context, inputGrams);
-                        }
+                      ? () => Navigator.pop(context, inputGrams)
                       : null,
                   child: const Text(
                     'Catat',

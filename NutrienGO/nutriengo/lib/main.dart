@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // WAJIB: Import Brankas Token
+import 'package:shared_preferences/shared_preferences.dart';
 import 'onboarding.dart';
 import 'login.dart';
 import 'signup.dart';
@@ -26,56 +26,119 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF8B9B82),
       ),
-      // Definisikan rute awal
       initialRoute: '/',
-      // Map rute yang SEKARANG DIJAGA KETAT OLEH SATPAM (AuthGuard)
       routes: {
-        // --- JALUR PUBLIK (GUEST) ---
-        // isProtected: false artinya hanya untuk yang BELUM login
-        '/': (context) =>
+        '/': (context) => const RootController(),
+        '/onboarding': (context) =>
             const AuthGuard(isProtected: false, child: OnboardingScreen()),
         '/login': (context) =>
             const AuthGuard(isProtected: false, child: LoginScreen()),
         '/signup': (context) =>
             const AuthGuard(isProtected: false, child: RegisterScreen()),
 
-        // --- JALUR PRIVAT (AUTH) ---
-        // isProtected: true artinya WAJIB punya Token JWT
-        '/assessment': (context) =>
-            const AuthGuard(isProtected: true, child: AssessmentScreen()),
-        '/home': (context) =>
-            const AuthGuard(isProtected: true, child: HomeScreen()),
-        '/track': (context) =>
-            const AuthGuard(isProtected: true, child: TrackingScreen()),
-        '/laporan': (context) =>
-            const AuthGuard(isProtected: true, child: LaporanScreen()),
-        '/profile': (context) =>
-            const AuthGuard(isProtected: true, child: ProfileScreen()),
-        '/admin': (context) =>
-            const AuthGuard(isProtected: true, child: AdminPanelScreen()),
+        '/assessment': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['USER'],
+          child: AssessmentScreen(),
+        ),
+        '/home': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['USER'],
+          child: HomeScreen(),
+        ),
+        '/track': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['USER'],
+          child: TrackingScreen(),
+        ),
+        '/laporan': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['USER'],
+          child: LaporanScreen(),
+        ),
+        '/profile': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['USER', 'ADMIN'],
+          child: ProfileScreen(),
+        ),
+
+        '/admin': (context) => const AuthGuard(
+          isProtected: true,
+          allowedRoles: ['ADMIN'],
+          child: AdminPanelScreen(),
+        ),
       },
     );
   }
 }
 
-// ==========================================
-// MIDDLEWARE / SATPAM APLIKASI (ROUTE GUARD)
-// ==========================================
+class RootController extends StatefulWidget {
+  const RootController({super.key});
+
+  @override
+  State<RootController> createState() => _RootControllerState();
+}
+
+class _RootControllerState extends State<RootController> {
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialRoute();
+  }
+
+  Future<void> _checkInitialRoute() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('jwt_token');
+    String? role = prefs.getString('user_role');
+    bool isProfileCompleted =
+        prefs.getBool('is_profile_completed') ??
+        true; // Default true buat akun lama
+
+    if (!mounted) return;
+
+    if (token != null) {
+      if (role == 'ADMIN') {
+        Navigator.pushReplacementNamed(context, '/admin');
+      } else {
+        // SATPAM BARU: Cek apakah profil sudah selesai?
+        if (!isProfileCompleted) {
+          Navigator.pushReplacementNamed(context, '/assessment');
+        } else {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } else {
+      Navigator.pushReplacementNamed(context, '/onboarding');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Color(0xFFF4F7F4),
+      body: Center(child: CircularProgressIndicator(color: Color(0xFF90A58D))),
+    );
+  }
+}
+
 class AuthGuard extends StatefulWidget {
   final Widget child;
-  final bool
-  isProtected; // Penentu apakah ini halaman rahasia atau halaman publik
+  final bool isProtected;
+  final List<String>? allowedRoles;
 
-  const AuthGuard({Key? key, required this.child, required this.isProtected})
-    : super(key: key);
+  const AuthGuard({
+    Key? key,
+    required this.child,
+    required this.isProtected,
+    this.allowedRoles,
+  }) : super(key: key);
 
   @override
   State<AuthGuard> createState() => _AuthGuardState();
 }
 
 class _AuthGuardState extends State<AuthGuard> {
-  bool _isLoading =
-      true; // Layar ditahan dulu (loading) saat satpam ngecek tiket
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -84,32 +147,57 @@ class _AuthGuardState extends State<AuthGuard> {
   }
 
   Future<void> _checkAccess() async {
-    // Buka brankas untuk mencari tiket JWT
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('jwt_token');
+    String? role = prefs.getString('user_role') ?? 'USER';
+    bool isProfileCompleted = prefs.getBool('is_profile_completed') ?? true;
 
-    // Mencegah error jika widget keburu ditutup sebelum pengecekan selesai
     if (!mounted) return;
 
-    // SKENARIO 1: Jalur Privat + Tidak Punya Tiket = TENDANG KE LOGIN
-    if (widget.isProtected && token == null) {
-      Navigator.pushReplacementNamed(context, '/login');
+    if (widget.isProtected) {
+      if (token == null) {
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      if (widget.allowedRoles != null && !widget.allowedRoles!.contains(role)) {
+        if (role == 'ADMIN') {
+          Navigator.pushReplacementNamed(context, '/admin');
+        } else {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+        return;
+      }
+
+      // SATPAM BARU: Cegah masuk ke halaman lain kalau assessment belum kelar
+      if (role == 'USER' &&
+          !isProfileCompleted &&
+          ModalRoute.of(context)?.settings.name != '/assessment') {
+        Navigator.pushReplacementNamed(context, '/assessment');
+        return;
+      }
+    } else {
+      if (token != null) {
+        if (role == 'ADMIN') {
+          Navigator.pushReplacementNamed(context, '/admin');
+        } else {
+          if (!isProfileCompleted) {
+            Navigator.pushReplacementNamed(context, '/assessment');
+          } else {
+            Navigator.pushReplacementNamed(context, '/home');
+          }
+        }
+        return;
+      }
     }
-    // SKENARIO 2: Jalur Publik + Sudah Punya Tiket = TENDANG BALIK KE HOME
-    else if (!widget.isProtected && token != null) {
-      Navigator.pushReplacementNamed(context, '/home');
-    }
-    // SKENARIO 3: Kondisi Normal = IZINKAN MASUK
-    else {
-      setState(() {
-        _isLoading = false; // Matikan loading, persilakan render halamannya
-      });
-    }
+
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Tampilkan layar loading polos sementara Satpam sedang bekerja di belakang layar
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFFF4F7F4),
@@ -118,8 +206,6 @@ class _AuthGuardState extends State<AuthGuard> {
         ),
       );
     }
-
-    // Jika lolos seleksi, tampilkan layarnya (misal: ProfileScreen atau HomeScreen)
     return widget.child;
   }
 }

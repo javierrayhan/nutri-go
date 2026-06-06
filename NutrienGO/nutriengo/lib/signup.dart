@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -145,16 +146,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 }
 
                                 // --- SUCCESS PIPELINE (TEMBAK API) ---
-                                // --- SUCCESS PIPELINE (TEMBAK API) ---
                                 setState(() {
                                   _isLoading = true;
                                 });
 
                                 AuthService authService = AuthService();
-
-                                // PERUBAHAN 1: Masukkan 'name' ke dalam parameter pengiriman
                                 bool isSuccess = await authService.register(
-                                  name, // <-- Ini yang baru ditambahkan
+                                  name,
                                   email,
                                   pass,
                                 );
@@ -164,6 +162,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 });
 
                                 if (isSuccess) {
+                                  // --- OPERASI PENYEGELAN BRANKAS ---
+                                  SharedPreferences prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.setBool(
+                                    'is_profile_completed',
+                                    false,
+                                  ); // Segel Dikunci
+                                  await prefs.setString(
+                                    'user_fullname',
+                                    name,
+                                  ); // Simpan nama untuk Prioritas 4
+                                  // ----------------------------------
+
+                                  if (!mounted) return;
+
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
@@ -173,13 +186,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     ),
                                   );
 
-                                  // PERUBAHAN 2: Arahkan langsung ke Assessment, BUKAN ke Login
-                                  // Karena API Damar yang baru sudah otomatis memberikan Token JWT saat Register
                                   Navigator.pushReplacementNamed(
                                     context,
                                     '/assessment',
                                   );
                                 } else {
+                                  if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(

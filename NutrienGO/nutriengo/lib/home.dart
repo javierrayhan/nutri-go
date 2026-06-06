@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Tambahan Import Brankas
 import 'services/profile_service.dart';
-import 'services/daily_log_service.dart'; // Tambahan Import Kurir Log
+import 'services/daily_log_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -11,14 +12,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
+  String _firstName = 'User'; // Variabel nama dinamis
 
-  // Variabel Target Maksimal (Dari Profile)
   int maxCalories = 0;
   double proteinMax = 0;
   double carbsMax = 0;
   double fatMax = 0;
 
-  // Variabel Progress Hari Ini (Dari Daily Logs)
   int currentCalories = 0;
   double proteinCurrent = 0;
   double carbsCurrent = 0;
@@ -27,29 +27,35 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData(); // Panggil fungsi gabungan
+    _loadData();
   }
 
-  // Fungsi pengaman angka
   double _safeDouble(dynamic value) {
     if (value == null) return 0.0;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  // --- FUNGSI GABUNGAN: TARIK PROFIL & TARIK LOG HARIAN ---
   Future<void> _loadData() async {
     ProfileService profileService = ProfileService();
     DailyLogService logService = DailyLogService();
 
-    // 1. Tarik Data Profil Damar
+    // 1. Ambil Nama dari Brankas
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? fullName = prefs.getString('user_fullname');
+    String fName = 'User';
+    if (fullName != null && fullName.trim().isNotEmpty) {
+      fName = fullName.trim().split(' ')[0]; // Ambil kata pertama saja
+    }
+
+    // 2. Tarik Data Profil Damar
     final profileData = await profileService.getProfile();
 
-    // 2. Tarik Data Makanan Hari Ini
+    // 3. Tarik Data Makanan Hari Ini
     String todayDate = DateTime.now().toIso8601String().split('T')[0];
     List<dynamic> logs = await logService.getDailyLogs(todayDate);
 
-    // 3. Kalkulasi Total Dimakan Hari Ini
+    // 4. Kalkulasi Total Dimakan
     double tempCals = 0;
     double tempPro = 0;
     double tempCarbs = 0;
@@ -63,8 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (profileData != null) {
+      if (!mounted) return;
       setState(() {
-        // Set Data Target
+        _firstName = fName; // Set nama dinamis
+
         maxCalories =
             double.tryParse(profileData['calorieGoal'].toString())?.toInt() ??
             0;
@@ -73,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
         carbsMax = double.tryParse(profileData['carbGoal'].toString()) ?? 0.0;
         fatMax = double.tryParse(profileData['fatGoal'].toString()) ?? 0.0;
 
-        // Set Data Progress Bar
         currentCalories = tempCals.toInt();
         proteinCurrent = tempPro;
         carbsCurrent = tempCarbs;
@@ -82,7 +89,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoading = false;
       });
     } else {
+      if (!mounted) return;
       setState(() {
+        _firstName = fName;
         _isLoading = false;
       });
       print("Data profil kosong atau gagal dimuat.");
@@ -110,9 +119,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 20),
-                        const Text(
-                          'Hi, Rian!',
-                          style: TextStyle(
+                        Text(
+                          'Hi, $_firstName!', // NAMA SUDAH DINAMIS
+                          style: const TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
@@ -128,7 +137,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 30),
 
-                        // Calorie Card
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(24),
@@ -180,7 +188,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // Macro Card with Dynamic Progress Bars
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(24),
@@ -219,7 +226,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 30),
 
-                        // Action Button
                         SizedBox(
                           width: double.infinity,
                           height: 60,
@@ -341,7 +347,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'Tracking',
             false,
             '/track',
-          ), // Disamakan jadi Tracking
+          ),
           _buildNavItem(
             context,
             Icons.bar_chart_rounded,
@@ -355,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'Profil',
             false,
             '/profile',
-          ), // Diganti jadi Profil
+          ),
         ],
       ),
     );
@@ -376,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Container(
-        color: Colors.transparent, // Memperlebar area klik agar lebih responsif
+        color: Colors.transparent,
         width: 64,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

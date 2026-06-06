@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'services/profile_service.dart'; // Import Service Asli Anda
-import 'services/auth_service.dart'; // Import AuthService untuk fungsi getUserMe
+import 'services/profile_service.dart';
+import 'services/auth_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,7 +13,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _profileData;
-  Map<String, dynamic>? _userData; // Menyimpan data email dari Auth
+  Map<String, dynamic>? _userData;
 
   final ProfileService _profileService = ProfileService();
   final AuthService _authService = AuthService();
@@ -24,14 +24,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _fetchAllData();
   }
 
-  // --- FUNGSI BARU: TARIK DATA PROFIL & USER BARENGAN ---
   Future<void> _fetchAllData() async {
     setState(() => _isLoading = true);
 
-    // Jalan paralel biar lebih cepat
     final profileResponse = await _profileService.getProfile();
-    final userResponse = await _authService
-        .getUserMe(); // Pastikan AuthService punya fungsi getUserMe()
+    final userResponse = await _authService.getUserMe();
 
     setState(() {
       _profileData = profileResponse;
@@ -40,9 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // --- FUNGSI BARU: LOG OUT SAKRAL ---
   Future<void> _performLogOut() async {
-    // 1. Tampilkan loading sebentar biar terasa natural
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -51,19 +46,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
 
-    // 2. Hapus JWT Token dari Brankas HP
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
+    await prefs.remove('user_role');
 
-    // 3. Tutup Dialog Loading
+    if (!mounted) return;
     Navigator.pop(context);
-
-    // 4. Tendang user balik ke halaman Login dan hapus history route
-    // Pastikan Jev mendaftarkan route '/login' di main.dart
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  // --- FUNGSI MUNCULKAN FORM EDIT PROFIL (VERSI FIX INDEFINITE LOADING) ---
+  // Mapper UI agar berbahasa Indonesia
+  String _mapGenderToUI(String? apiGender) {
+    if (apiGender == 'FEMALE') return 'Perempuan';
+    if (apiGender == 'MALE') return 'Laki-Laki';
+    return apiGender ?? '-';
+  }
+
+  String _mapGoalToUI(String? apiGoal) {
+    if (apiGoal == 'CUTTING') return 'Cutting';
+    if (apiGoal == 'BULKING') return 'Bulking';
+    if (apiGoal == 'MAINTAINING') return 'Maintain';
+    return apiGoal ?? '-';
+  }
+
   void _showEditProfileModal() {
     if (_profileData == null) return;
 
@@ -71,27 +76,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     double height = _safeDouble(_profileData!['height']);
     double weight = _safeDouble(_profileData!['weight']);
     double weightGoal = _safeDouble(_profileData!['weightGoal']);
-    String gender = _profileData!['gender'] == 'Laki-Laki' ? 'MALE' : 'FEMALE';
-    String activityLevel = 'MODERATE';
-    String goal = 'MAINTAINING';
-
-    if (_profileData!['activityLevel'] == 'Sangat Aktif')
-      activityLevel = 'VERY_ACTIVE';
-    if (_profileData!['activityLevel'] == 'Ekstra Aktif')
-      activityLevel = 'EXTRA_ACTIVE';
-    if (_profileData!['activityLevel'] == 'Sedikit Aktif')
-      activityLevel = 'LIGHTLY_ACTIVE';
-    if (_profileData!['activityLevel'] == 'Jarang Bergerak')
-      activityLevel = 'SEDENTARY';
+    String gender = _profileData!['gender'] == 'FEMALE' ? 'FEMALE' : 'MALE';
+    String activityLevel = _profileData!['activityLevel'] ?? 'MODERATE';
 
     String currentGoal = (_profileData!['goal'] ?? '').toString().toUpperCase();
+    String goal = 'MAINTAINING';
     if (currentGoal == 'BULKING') goal = 'BULKING';
     if (currentGoal == 'CUTTING') goal = 'CUTTING';
-    if (currentGoal == 'MAINTAINING') goal = 'MAINTAINING';
 
-    if (_profileData!['gender'] == 'Perempuan') gender = 'FEMALE';
-
-    // Buat variabel loading lokal khusus untuk modal sheet
     bool isModalSaving = false;
 
     showModalBottomSheet(
@@ -217,20 +209,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Text('Jarang Bergerak'),
                         ),
                         DropdownMenuItem(
-                          value: 'LIGHTLY_ACTIVE',
-                          child: Text('Sedikit Aktif'),
-                        ),
-                        DropdownMenuItem(
                           value: 'MODERATE',
                           child: Text('Cukup Aktif'),
                         ),
                         DropdownMenuItem(
                           value: 'VERY_ACTIVE',
                           child: Text('Sangat Aktif'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'EXTRA_ACTIVE',
-                          child: Text('Ekstra Aktif'),
                         ),
                       ],
                       onChanged: (val) =>
@@ -261,7 +245,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 30),
 
-                    // Tombol Simpan Otomatis Loading Internal
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -272,16 +255,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             borderRadius: BorderRadius.circular(20),
                           ),
                         ),
-                        // Nonaktifkan tombol klik jika sedang loading
                         onPressed: isModalSaving
                             ? null
                             : () async {
-                                // 1. Set status loading internal modal
+                                // Validasi Logika Target
+                                if (goal == 'CUTTING' && weightGoal >= weight) {
+                                  _showToast(
+                                    context,
+                                    'Untuk Cutting, target berat harus lebih kecil dari berat saat ini!',
+                                  );
+                                  return;
+                                }
+                                if (goal == 'BULKING' && weightGoal <= weight) {
+                                  _showToast(
+                                    context,
+                                    'Untuk Bulking, target berat harus lebih besar dari berat saat ini!',
+                                  );
+                                  return;
+                                }
+
                                 setModalState(() {
                                   isModalSaving = true;
                                 });
 
-                                // 2. Jalankan pengiriman data ke Damar
                                 bool success = await _profileService
                                     .updateProfile({
                                       "age": age,
@@ -293,29 +289,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       "goal": goal,
                                     });
 
-                                // Pengaman tambahan jika user terburu-buru keluar halaman
                                 if (!mounted) return;
 
                                 if (success) {
-                                  // 3. Jika sukses, baru tutup Modal Sheet-nya
                                   Navigator.pop(context);
                                   _showToast(
                                     context,
                                     'Profil berhasil diupdate!',
                                   );
-                                  _fetchAllData(); // Refresh layar utama agar angka berganti
+                                  _fetchAllData();
                                 } else {
-                                  // 4. Jika gagal, matikan loading agar user bisa mencoba klik lagi
                                   setModalState(() {
                                     isModalSaving = false;
                                   });
                                   _showToast(
                                     context,
-                                    'Gagal mengupdate profil. Cek validasi server.',
+                                    'Gagal mengupdate profil. Cek koneksi server.',
                                   );
                                 }
                               },
-                        // Ubah teks tombol menjadi spinner muter jika status loading aktif
                         child: isModalSaving
                             ? const SizedBox(
                                 width: 24,
@@ -344,7 +336,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Tambahkan fungsi helper ini jika belum ada
   double _safeDouble(dynamic value) {
     if (value == null) return 0.0;
     if (value is num) return value.toDouble();
@@ -358,7 +349,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             const Icon(Icons.info_outline_rounded, color: Color(0xFF90A58D)),
             const SizedBox(width: 12),
-            Text(message, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
         backgroundColor: const Color(0xFF2D3748),
@@ -415,7 +411,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
-
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -423,7 +418,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 30),
-
                         Stack(
                           clipBehavior: Clip.none,
                           alignment: Alignment.topCenter,
@@ -450,7 +444,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               child: Column(
                                 children: [
-                                  // NAMA USER DARI DATABASE AUTH
                                   Text(
                                     _userData != null
                                         ? _userData!['email']
@@ -464,12 +457,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  // DATA GENDER DAN GOAL DARI PROFILE
                                   Text(
                                     _isLoading
                                         ? 'Memuat data...'
                                         : (_profileData != null
-                                              ? '${_profileData!['gender']} • ${_profileData!['goal']}'
+                                              ? '${_mapGenderToUI(_profileData!['gender'])} • ${_mapGoalToUI(_profileData!['goal'])}'
                                               : (_userData != null
                                                     ? _userData!['email']
                                                     : 'user@nutriengo.com')),
@@ -479,14 +471,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
-
                                   const SizedBox(height: 24),
                                   const Divider(
                                     color: Color(0xFFF1F5F9),
                                     thickness: 1.5,
                                   ),
                                   const SizedBox(height: 20),
-
                                   _isLoading
                                       ? const Padding(
                                           padding: EdgeInsets.all(20.0),
@@ -555,9 +545,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 32),
-
                         const Padding(
                           padding: EdgeInsets.only(left: 8.0, bottom: 12.0),
                           child: Text(
@@ -586,9 +574,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ],
                           ),
                         ),
-
                         const SizedBox(height: 24),
-
                         const Padding(
                           padding: EdgeInsets.only(left: 8.0, bottom: 12.0),
                           child: Text(
@@ -612,7 +598,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context,
                             title: 'Keluar (Log Out)',
                             textColor: Colors.redAccent,
-                            onTap: _performLogOut, // SAMBUNGKAN FUNGSI LOGOUT!
+                            onTap: _performLogOut,
                           ),
                         ),
                       ],
