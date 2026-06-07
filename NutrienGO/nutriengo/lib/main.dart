@@ -72,6 +72,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// =========================================================================
+// UPGRADE: ROOT CONTROLLER MENJADI SPLASH SCREEN RESMI (TAHAN LAYAR 3 DETIK)
+// =========================================================================
 class RootController extends StatefulWidget {
   const RootController({super.key});
 
@@ -87,12 +90,13 @@ class _RootControllerState extends State<RootController> {
   }
 
   Future<void> _checkInitialRoute() async {
+    // Menahan layar selama 3 detik untuk memunculkan logo NutriGo
+    await Future.delayed(const Duration(seconds: 3));
+
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('jwt_token');
     String? role = prefs.getString('user_role');
-    bool isProfileCompleted =
-        prefs.getBool('is_profile_completed') ??
-        true; // Default true buat akun lama
+    bool isProfileCompleted = prefs.getBool('is_profile_completed') ?? true;
 
     if (!mounted) return;
 
@@ -100,7 +104,6 @@ class _RootControllerState extends State<RootController> {
       if (role == 'ADMIN') {
         Navigator.pushReplacementNamed(context, '/admin');
       } else {
-        // SATPAM BARU: Cek apakah profil sudah selesai?
         if (!isProfileCompleted) {
           Navigator.pushReplacementNamed(context, '/assessment');
         } else {
@@ -114,9 +117,31 @@ class _RootControllerState extends State<RootController> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFFF4F7F4),
-      body: Center(child: CircularProgressIndicator(color: Color(0xFF90A58D))),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F7),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/logo.png',
+              width: 180,
+              height: 180,
+              fit: BoxFit.contain,
+              // Fallback aman jika file gambar belum dimasukkan ke folder assets
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.gpp_good_rounded,
+                  size: 100,
+                  color: Color(0xFF8B9B82),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(color: Color(0xFF90A58D)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -169,7 +194,6 @@ class _AuthGuardState extends State<AuthGuard> {
         return;
       }
 
-      // SATPAM BARU: Cegah masuk ke halaman lain kalau assessment belum kelar
       if (role == 'USER' &&
           !isProfileCompleted &&
           ModalRoute.of(context)?.settings.name != '/assessment') {

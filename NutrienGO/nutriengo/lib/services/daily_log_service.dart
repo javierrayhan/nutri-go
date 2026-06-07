@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 class DailyLogService {
   final String baseUrl = 'https://api-nutrigo.vercel.app/api/dailylogs';
 
-  // Fungsi untuk mengirim 1 log makanan ke server Damar
   Future<bool> createDailyLog(Map<String, dynamic> logData) async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -21,7 +20,6 @@ class DailyLogService {
       );
 
       if (response.statusCode == 201) {
-        print('Sukses mencatat makanan: ${response.body}');
         return true;
       } else {
         print(
@@ -40,7 +38,6 @@ class DailyLogService {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('jwt_token');
 
-      // Tembak API GET /api/dailylogs/{date} sesuai Swagger Damar
       final response = await http.get(
         Uri.parse('$baseUrl/$date'),
         headers: {
@@ -67,7 +64,6 @@ class DailyLogService {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('jwt_token');
 
-      // Tembak API DELETE sesuai Swagger Damar
       final response = await http.delete(
         Uri.parse('$baseUrl/$id'),
         headers: {
@@ -86,6 +82,35 @@ class DailyLogService {
       }
     } catch (e) {
       print('Error exception saat hapus log: $e');
+      return false;
+    }
+  }
+
+  // --- FUNGSI BARU: UPDATE GRAMASI (PATCH) ---
+  Future<bool> updateDailyLogGram(int id, Map<String, dynamic> payload) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('jwt_token');
+
+      final response = await http.patch(
+        Uri.parse('$baseUrl/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(payload), // Kirim payload lengkap dari Flutter
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print(
+          'Gagal update gramasi: HTTP ${response.statusCode} - ${response.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      print('Error exception update gramasi: $e');
       return false;
     }
   }

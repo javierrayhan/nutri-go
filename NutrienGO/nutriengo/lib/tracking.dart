@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Tambahan Import Brankas
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/food_service.dart';
 import 'services/daily_log_service.dart';
+import 'services/auth_service.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({Key? key}) : super(key: key);
@@ -11,7 +12,7 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen> {
-  String _firstName = 'User'; // Variabel nama dinamis
+  String _firstName = 'User';
 
   List<Map<String, dynamic>> mealSchedules = [
     {
@@ -77,12 +78,23 @@ class _TrackingScreenState extends State<TrackingScreen> {
   Future<void> _loadTodayLogs() async {
     setState(() => _isLoadingLogs = true);
 
-    // Ambil nama pengguna
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? fullName = prefs.getString('user_fullname');
     String fName = 'User';
+
     if (fullName != null && fullName.trim().isNotEmpty) {
       fName = fullName.trim().split(' ')[0];
+    } else {
+      // JIKA BRANKAS KOSONG (Karena baru install & Login)
+      AuthService authService = AuthService();
+      final userData = await authService.getUserMe();
+      if (userData != null && userData['email'] != null) {
+        String emailStr = userData['email'].split(
+          '@',
+        )[0]; // Ambil nama depan dari email
+        // Buat huruf pertama jadi Kapital
+        fName = emailStr[0].toUpperCase() + emailStr.substring(1);
+      }
     }
 
     DailyLogService logService = DailyLogService();
@@ -155,7 +167,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
     if (!mounted) return;
     setState(() {
-      _firstName = fName; // Set nama dinamis
+      _firstName = fName;
       mealSchedules = [
         grouped['BREAKFAST']!,
         grouped['LUNCH']!,
@@ -215,6 +227,128 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
+  // =========================================================================
+  // SERANGAN PART B: FITUR EDIT GRAMASI
+  // =========================================================================
+  Future<void> _editLogItem(dynamic item, Map<String, dynamic> meal) async {
+    double oldGram = _safeDouble(item['consumtionGram']);
+    if (oldGram == 0) oldGram = 1; // Mencegah error dibagi nol
+
+    final TextEditingController gramController = TextEditingController(
+      text: oldGram.toInt().toString(),
+    );
+
+    double? newGram = await showDialog<double>(
+      context: context,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Ubah Porsi: ${item['foodName']}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Masukkan gramasi baru:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: gramController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                suffixText: 'gram',
+                filled: true,
+                fillColor: Colors.grey[100],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, null),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF90A58D),
+            ),
+            onPressed: () {
+              double val = double.tryParse(gramController.text) ?? 0;
+              if (val > 0) Navigator.pop(c, val);
+            },
+            child: const Text('Simpan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    // Jika user memasukkan angka baru yang berbeda dari angka lama
+    if (newGram != null && newGram != oldGram) {
+      double oldCals = _safeDouble(item['totalCalories']);
+      double oldPro = _safeDouble(item['totalProtein']);
+      double oldCarbs = _safeDouble(item['totalCarbs']);
+      double oldFat = _safeDouble(item['totalFat']);
+
+      // KALKULASI RUMUS MATEMATIKA DI FLUTTER
+      double newCals = (oldCals / oldGram) * newGram;
+      double newPro = (oldPro / oldGram) * newGram;
+      double newCarbs = (oldCarbs / oldGram) * newGram;
+      double newFat = (oldFat / oldGram) * newGram;
+
+      // 1. OPTIMISTIC UI: LANGSUNG UBAH TAMPILAN TANPA LOADING!
+      setState(() {
+        // Update data makanan itu sendiri
+        item['consumtionGram'] = newGram.toInt();
+        item['totalCalories'] = newCals;
+        item['totalProtein'] = newPro;
+        item['totalCarbs'] = newCarbs;
+        item['totalFat'] = newFat;
+
+        // Update total di Card Makan (Pagi/Siang/Malam)
+        meal['cals'] += (newCals - oldCals);
+        meal['protein'] += (newPro - oldPro);
+        meal['carbs'] += (newCarbs - oldCarbs);
+        meal['fat'] += (newFat - oldFat);
+
+        // Update Rekap Total Paling Atas
+        _dailyTotalCals += (newCals - oldCals);
+        _dailyTotalPro += (newPro - oldPro);
+        _dailyTotalCarbs += (newCarbs - oldCarbs);
+        _dailyTotalFat += (newFat - oldFat);
+      });
+
+      // 2. KIRIM DATA KE BACKEND DI BELAKANG LAYAR (SILENT BACKGROUND)
+      DailyLogService logService = DailyLogService();
+      Map<String, dynamic> patchPayload = {
+        "consumtionGram": newGram.toInt(),
+        "totalCalories": newCals,
+        "totalProtein": newPro,
+        "totalCarbs": newCarbs,
+        "totalFat": newFat,
+      };
+
+      bool success = await logService.updateDailyLogGram(
+        item['id'],
+        patchPayload,
+      );
+
+      // Jika ternyata internet putus / gagal, kita kembalikan datanya (Rollback)
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Koneksi gagal. Perubahan tidak tersimpan.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadTodayLogs(); // Tarik ulang data lama dari server
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -235,7 +369,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Hi, $_firstName!', // NAMA SUDAH DINAMIS
+                        'Hi, $_firstName!',
                         style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -485,41 +619,48 @@ class _TrackingScreenState extends State<TrackingScreen> {
                               item['foodName'],
                             );
                           },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 8.0,
-                              horizontal: 4.0,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item['foodName'] ?? 'Unknown',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
+                          // MEMBUAT ITEM BISA DIKLIK UNTUK DI-EDIT
+                          child: InkWell(
+                            onTap: () => _editLogItem(item, meal),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8.0,
+                                horizontal: 4.0,
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['foodName'] ?? 'Unknown',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      '${item['consumtionGram']} gram',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
+                                      Text(
+                                        '${item['consumtionGram']} gram (Ketuk untuk ubah)',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  '${_safeDouble(item['totalCalories']).toInt()} kcal',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF90A58D),
+                                    ],
                                   ),
-                                ),
-                              ],
+                                  Text(
+                                    '${_safeDouble(item['totalCalories']).toInt()} kcal',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF90A58D),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );
@@ -734,7 +875,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                                 );
                               },
                               child: const Text(
-                                'Simpan Pilihan',
+                                'Lanjut Atur Porsi',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -807,34 +948,51 @@ class _TrackingScreenState extends State<TrackingScreen> {
     List<dynamic> selectedFoods,
     String mealTimeEnum,
   ) async {
-    DailyLogService logService = DailyLogService();
-    String todayIso = DateTime.now().toUtc().toIso8601String();
+    // 1. Munculkan Dialog Kolektif
+    Map<int, double>? inputtedGrams = await _showCollectiveGramDialog(
+      context,
+      selectedFoods,
+    );
 
-    for (var food in selectedFoods) {
-      double? inputtedGram = await _showGramInputDialog(context, food);
+    // 2. Jika user menekan "Catat Semua" dan datanya ada
+    if (inputtedGrams != null && inputtedGrams.isNotEmpty) {
+      if (!mounted) return;
 
-      if (inputtedGram != null && inputtedGram > 0) {
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (c) => const Center(
-            child: CircularProgressIndicator(color: Color(0xFF90A58D)),
-          ),
-        );
+      // Tampilkan Loading Screen
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF90A58D)),
+        ),
+      );
 
-        double cals = (_safeDouble(food['calories']) / 100) * inputtedGram;
-        double pro = (_safeDouble(food['protein']) / 100) * inputtedGram;
-        double carbs = (_safeDouble(food['carbs']) / 100) * inputtedGram;
-        double fat = (_safeDouble(food['fat']) / 100) * inputtedGram;
-        double sugar = (_safeDouble(food['sugar']) / 100) * inputtedGram;
-        double natrium = (_safeDouble(food['natrium']) / 100) * inputtedGram;
+      DailyLogService logService = DailyLogService();
+
+      // ==========================================
+      // FIX TIMEZONE BUG: Paksa pakai Tanggal Lokal
+      // ==========================================
+      String todayDate = DateTime.now().toIso8601String().split('T')[0];
+      String todayIso = "${todayDate}T00:00:00.000Z";
+      // ==========================================
+
+      // Buat List Future untuk Parallel Fetching
+      List<Future<bool>> futures = [];
+
+      inputtedGrams.forEach((index, gram) {
+        var food = selectedFoods[index];
+        double cals = (_safeDouble(food['calories']) / 100) * gram;
+        double pro = (_safeDouble(food['protein']) / 100) * gram;
+        double carbs = (_safeDouble(food['carbs']) / 100) * gram;
+        double fat = (_safeDouble(food['fat']) / 100) * gram;
+        double sugar = (_safeDouble(food['sugar']) / 100) * gram;
+        double natrium = (_safeDouble(food['natrium']) / 100) * gram;
 
         Map<String, dynamic> payload = {
           "foodId": food['id'],
           "date": todayIso,
           "mealTime": mealTimeEnum,
-          "consumtionGram": inputtedGram.toInt(),
+          "consumtionGram": gram.toInt(),
           "totalCalories": cals > 0 ? cals : 0.01,
           "totalProtein": pro > 0 ? pro : 0.01,
           "totalCarbs": carbs > 0 ? carbs : 0.01,
@@ -843,166 +1001,138 @@ class _TrackingScreenState extends State<TrackingScreen> {
           "totalNatrium": natrium > 0 ? natrium : 0.01,
         };
 
-        bool success = await logService.createDailyLog(payload);
-        if (!mounted) return;
-        Navigator.pop(context);
+        // Kumpulkan semua request ke dalam List
+        futures.add(logService.createDailyLog(payload));
+      });
 
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${food['name']} dicatat!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Gagal mencatat ${food['name']}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      // 3. Tembak Semua API Bersamaan! (Sangat Cepat)
+      List<bool> results = await Future.wait(futures);
+
+      if (!mounted) return;
+      Navigator.pop(context); // Tutup Loading
+
+      // Jika minimal ada 1 yang berhasil
+      if (results.contains(true)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Semua makanan berhasil dicatat!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Koneksi terputus. Gagal mencatat.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
 
+    // Bersihkan centang dan refresh UI
     setState(() {
       for (var f in _allFoods) f['checked'] = false;
     });
     _loadTodayLogs();
   }
 
-  Future<double?> _showGramInputDialog(BuildContext context, dynamic foodData) {
-    final TextEditingController gramController = TextEditingController();
-    final double baseCals = _safeDouble(foodData['calories']);
-    final double basePro = _safeDouble(foodData['protein']);
+  // WIDGET POP-UP KOLEKTIF
+  Future<Map<int, double>?> _showCollectiveGramDialog(
+    BuildContext context,
+    List<dynamic> foods,
+  ) {
+    // Siapkan Controller sejumlah makanan yang dipilih
+    List<TextEditingController> controllers = List.generate(
+      foods.length,
+      (_) => TextEditingController(),
+    );
 
-    return showDialog<double>(
+    return showDialog<Map<int, double>>(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            double inputGrams = double.tryParse(gramController.text) ?? 0;
-            double finalCals = (baseCals / 100) * inputGrams;
-            double finalPro = (basePro / 100) * inputGrams;
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Text(
-                foodData['name'] ?? 'Makanan',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Berapa gram porsi makananmu?',
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: gramController,
-                    keyboardType: TextInputType.number,
-                    onChanged: (val) {
-                      setDialogState(() {});
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Misal: 150',
-                      suffixText: 'gram',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Atur Porsi Makanan',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            // Bungkus dengan Scroll agar aman walau user pilih 10 makanan
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: foods.length,
+              separatorBuilder: (c, i) => const SizedBox(height: 12),
+              itemBuilder: (c, index) {
+                return Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        foods[index]['name'] ?? 'Makanan',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF4F7F4),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF90A58D).withOpacity(0.3),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: controllers[index],
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          hintText: 'gram',
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Total Kalori',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            Text(
-                              '${finalCals.toStringAsFixed(1)} kcal',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            const Text(
-                              'Total Protein',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            Text(
-                              '${finalPro.toStringAsFixed(1)} g',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Color(0xFFFF6B6B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF90A58D),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, null),
-                  child: const Text(
-                    'Batal',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF90A58D),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  onPressed: inputGrams > 0
-                      ? () => Navigator.pop(context, inputGrams)
-                      : null,
-                  child: const Text(
-                    'Catat',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            );
-          },
+              onPressed: () {
+                Map<int, double> results = {};
+                for (int i = 0; i < foods.length; i++) {
+                  double val = double.tryParse(controllers[i].text) ?? 0;
+                  if (val > 0) {
+                    results[i] = val; // Simpan index dan nilai gram-nya
+                  }
+                }
+                Navigator.pop(context, results);
+              },
+              child: const Text(
+                'Catat Semua',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
         );
       },
     );

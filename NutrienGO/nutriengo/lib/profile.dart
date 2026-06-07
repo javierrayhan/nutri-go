@@ -49,6 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
     await prefs.remove('user_role');
+    await prefs.remove('user_fullname');
 
     if (!mounted) return;
     Navigator.pop(context);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Tambahan Import Brankas
 import 'services/profile_service.dart';
 import 'services/daily_log_service.dart';
+import 'services/auth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -44,8 +45,20 @@ class _HomeScreenState extends State<HomeScreen> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? fullName = prefs.getString('user_fullname');
     String fName = 'User';
+
     if (fullName != null && fullName.trim().isNotEmpty) {
-      fName = fullName.trim().split(' ')[0]; // Ambil kata pertama saja
+      fName = fullName.trim().split(' ')[0];
+    } else {
+      // JIKA BRANKAS KOSONG (Karena baru install & Login)
+      AuthService authService = AuthService();
+      final userData = await authService.getUserMe();
+      if (userData != null && userData['email'] != null) {
+        String emailStr = userData['email'].split(
+          '@',
+        )[0]; // Ambil nama depan dari email
+        // Buat huruf pertama jadi Kapital
+        fName = emailStr[0].toUpperCase() + emailStr.substring(1);
+      }
     }
 
     // 2. Tarik Data Profil Damar
