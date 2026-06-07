@@ -450,7 +450,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         ? _userData!['email']
                                               .split('@')[0]
                                               .toUpperCase()
-                                        : 'Rian',
+                                        : 'User',
                                     style: const TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.w900,
